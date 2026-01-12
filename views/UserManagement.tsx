@@ -220,20 +220,19 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateUser, on
                   <Shield size={24} />
               </div>
               <div>
-                  <h3 className="font-bold text-gray-900 text-lg">Super Admin Privileges</h3>
+                  <h3 className="font-bold text-gray-900 text-lg"></h3>
                   <p className="text-sm text-gray-600 mt-1 mb-4 max-w-2xl">
-                      As a Super Admin, you have the ability to override all system settings, manage other administrators, and access audit logs. 
-                      Changes made to user roles are effective immediately.
+                      
                   </p>
                   <div className="flex gap-4">
                       <div className="flex items-center gap-2 text-sm text-purple-800 font-medium">
-                          <Check size={16} /> Global Policy Override
+                          <Check size={16} /> 
                       </div>
                       <div className="flex items-center gap-2 text-sm text-purple-800 font-medium">
-                          <Check size={16} /> User Role Management
+                          <Check size={16} />
                       </div>
                       <div className="flex items-center gap-2 text-sm text-purple-800 font-medium">
-                          <Check size={16} /> System Health Monitor
+                          <Check size={16} /> 
                       </div>
                   </div>
               </div>

@@ -386,13 +386,14 @@ const App: React.FC = () => {
                 />
               )}
 
-              {currentView === ViewState.USER_MANAGEMENT && (
-                <UserManagement 
-                  users={users}
-                  onUpdateUser={handleUpdateUser}
-                  onDeleteUser={handleDeleteUser}
-                />
-              )}
+              {currentView === ViewState.USER_MANAGEMENT && currentUser?.role === UserRole.SUPER_ADMIN && (
+               <UserManagement 
+                users={users}
+                 onUpdateUser={handleUpdateUser}
+                 onDeleteUser={handleDeleteUser}
+                 />
+                  )}
+
 
               {currentView === ViewState.REQUEST_DETAILS && (
                 <RequestDetails 

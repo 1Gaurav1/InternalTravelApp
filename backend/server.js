@@ -1,7 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import 'dotenv/config'; // Modern way to load dotenv
+import 'dotenv/config'; 
 
 const app = express();
 const PORT = 5000;
@@ -9,8 +9,9 @@ const PORT = 5000;
 app.use(cors());
 app.use(express.json());
 
-// --- MONGODB CONNECTION ---
-mongoose.connect('mongodb://127.0.0.1:27017/renee_travel')
+// MONGO CONNECTION
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(async () => {
     console.log('MongoDB Connected');
     await seedData();

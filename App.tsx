@@ -117,6 +117,25 @@ const App: React.FC = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+  const savedUser = localStorage.getItem("user");
+  if (savedUser) {
+    const userObj = JSON.parse(savedUser);
+    setCurrentUser(userObj);
+
+    if (userObj.role === UserRole.ADMIN || userObj.role === UserRole.SUPER_ADMIN) {
+      setCurrentView(ViewState.ADMIN_DASHBOARD);
+    } else if (userObj.role === UserRole.MANAGER) {
+      setCurrentView(ViewState.MANAGER_DASHBOARD);
+    } else if (userObj.role === UserRole.TRAVEL_AGENT) {
+      setCurrentView(ViewState.TRAVEL_AGENT_DASHBOARD);
+    } else {
+      setCurrentView(ViewState.EMPLOYEE_DASHBOARD);
+    }
+  }
+}, []);
+
+
   // -- ACTIONS --
 
   const handleCreateRequest = async (newRequest: TravelRequest) => {
@@ -243,18 +262,19 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
-      setCurrentView(ViewState.ADMIN_DASHBOARD);
-    } else if (user.role === UserRole.MANAGER) {
-      setCurrentView(ViewState.MANAGER_DASHBOARD);
-    } else if (user.role === UserRole.TRAVEL_AGENT) {
-      setCurrentView(ViewState.TRAVEL_AGENT_DASHBOARD);
-    } else {
-      setCurrentView(ViewState.EMPLOYEE_DASHBOARD);
-    }
-  };
+const handleLogin = (user: User) => {
+  setCurrentUser(user);
+  localStorage.setItem("user", JSON.stringify(user));
+  if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
+    setCurrentView(ViewState.ADMIN_DASHBOARD);
+  } else if (user.role === UserRole.MANAGER) {
+    setCurrentView(ViewState.MANAGER_DASHBOARD);
+  } else if (user.role === UserRole.TRAVEL_AGENT) {
+    setCurrentView(ViewState.TRAVEL_AGENT_DASHBOARD);
+  } else {
+    setCurrentView(ViewState.EMPLOYEE_DASHBOARD);
+  }
+};
 
   const handleNavigate = (view: ViewState) => {
     setCurrentView(view);
@@ -262,10 +282,12 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    setCurrentUser(null);
-    setCurrentView(ViewState.LOGIN);
-    setNotifications([]);
-  };
+  localStorage.removeItem("user");
+  setCurrentUser(null);
+  setCurrentView(ViewState.LOGIN);
+  setNotifications([]);
+};
+
 
   const handleViewRequest = (id: string) => {
     setSelectedRequestId(id);
@@ -329,7 +351,7 @@ const App: React.FC = () => {
         <main className="flex-1 overflow-y-auto p-4 md:p-8 w-full relative">
           {backendError && (
             <div className="absolute top-0 left-0 w-full bg-red-100 text-red-700 text-xs px-4 py-2 text-center border-b border-red-200">
-               ⚠️ Backend Disconnected: Changes will not be saved to database. Check your Node.js server.
+               Backend Disconnected: Changes will not be saved to database. Check your Node.js server.
             </div>
           )}
           

@@ -43,7 +43,7 @@ export interface User {
 }
 
 export interface TravelRequest {
-  id: string;
+  id?: string;
   destination: string;
   startDate: string;
   endDate: string;
@@ -53,6 +53,7 @@ export interface TravelRequest {
   amount: number; 
   policyViolations?: string[];
   employeeName: string;
+  preferredFlight?: string;
   employeeAvatar?: string;
   department: string;
   type: 'Domestic' | 'International';

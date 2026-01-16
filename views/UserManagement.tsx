@@ -212,32 +212,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateUser, on
              </div>
         </div>
       </div>
-      
-      {/* Permission Matrix Preview */}
-      <div className="bg-purple-50 border border-purple-100 rounded-2xl p-6">
-          <div className="flex items-start gap-4">
-              <div className="p-3 bg-white rounded-xl text-purple-600 shadow-sm">
-                  <Shield size={24} />
-              </div>
-              <div>
-                  <h3 className="font-bold text-gray-900 text-lg"></h3>
-                  <p className="text-sm text-gray-600 mt-1 mb-4 max-w-2xl">
-                      
-                  </p>
-                  <div className="flex gap-4">
-                      <div className="flex items-center gap-2 text-sm text-purple-800 font-medium">
-                          <Check size={16} /> 
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-purple-800 font-medium">
-                          <Check size={16} />
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-purple-800 font-medium">
-                          <Check size={16} /> 
-                      </div>
-                  </div>
-              </div>
-          </div>
-      </div>
 
       <ConfirmationModal 
         isOpen={modalOpen} 

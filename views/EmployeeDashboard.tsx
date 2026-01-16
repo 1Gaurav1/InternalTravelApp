@@ -8,17 +8,60 @@ interface EmployeeDashboardProps {
   requests: TravelRequest[];
 }
 
+
 const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ onNavigate, requests }) => {
   // Filter Logic: In a real app, you'd filter by logged-in user ID
   // For this demo, we assume "Alex Morgan" is the logged in employee
   const myRequests = requests; 
 
-  const stats = [
-    { label: 'Total Requests', value: myRequests.length.toString(), trend: '+5% this month', icon: FileText, color: 'text-gray-600', bg: 'bg-gray-100' },
-    { label: 'Approved', value: myRequests.filter(r => r.status.includes('Agent') || r.status === 'Booked').length.toString(), trend: '+12% this month', icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
-    { label: 'Pending', value: myRequests.filter(r => r.status.includes('Pending')).length.toString(), trend: 'Awaiting approval', icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-100' },
-    { label: 'Rejected', value: myRequests.filter(r => r.status === 'Rejected').length.toString(), trend: 'Check comments', icon: XCircle, color: 'text-red-600', bg: 'bg-red-100' },
-  ];
+  const total = myRequests.length;
+const approved = myRequests.filter(r => 
+  r.status.includes("Agent") || r.status === "Booked"
+).length;
+
+const pending = myRequests.filter(r => 
+  r.status.includes("Pending")
+).length;
+
+const rejected = myRequests.filter(r => 
+  r.status === "Rejected"
+).length;
+
+const stats = [
+  { 
+    label: 'Total Requests', 
+    value: total.toString(), 
+    trend: '', 
+    icon: FileText, 
+    color: 'text-gray-600', 
+    bg: 'bg-gray-100' 
+  },
+  { 
+    label: 'Approved', 
+    value: approved.toString(), 
+    trend: '', 
+    icon: CheckCircle, 
+    color: 'text-green-600', 
+    bg: 'bg-green-100' 
+  },
+  { 
+    label: 'Pending', 
+    value: pending.toString(), 
+    trend: '', 
+    icon: Clock, 
+    color: 'text-yellow-600', 
+    bg: 'bg-yellow-100' 
+  },
+  { 
+    label: 'Rejected', 
+    value: rejected.toString(), 
+    trend: '', 
+    icon: XCircle, 
+    color: 'text-red-600', 
+    bg: 'bg-red-100' 
+  },
+];
+
 
   return (
     <div className="space-y-8 animate-fade-in">

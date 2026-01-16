@@ -44,7 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, us
   const adminMenu = [
     { view: ViewState.ADMIN_DASHBOARD, label: 'Admin Console', icon: LayoutDashboard },
     { view: ViewState.ADMIN_REPORTS, label: 'Global Reports', icon: BarChart3 },
-    { view: ViewState.USER_MANAGEMENT, label: 'User Management', icon: Users },
+    // { view: ViewState.USER_MANAGEMENT, label: 'User Management', icon: Users },
     ...(userRole === UserRole.SUPER_ADMIN ? [{ view: ViewState.ADMIN_REPORTS, label: 'System Health', icon: Globe }] : [])
   ];
 
@@ -67,9 +67,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, us
         <div>
           <div className="p-8 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg shadow-primary-500/20">
-                <Plane size={20} />
-              </div>
+              <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-primary-500/20">
+            <img 
+              src="/travel.png" 
+              className="w-full h-full object-cover" 
+              alt="logo"
+            />
+            </div>
+
               <div>
                 <h1 className="text-xl font-bold text-gray-900 tracking-tight leading-none">Renee Travel</h1>
                 <p className="text-[10px] uppercase font-bold text-gray-400 mt-1 tracking-wider">

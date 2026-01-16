@@ -18,6 +18,10 @@ export const api = {
     const res = await fetch(`${API_URL}/users`);
     return handleResponse(res);
   },
+async getStats() {
+  const res = await fetch(`${API_URL}/stats`);
+  return await res.json();
+},
 
   createUser: async (user: User): Promise<User> => {
     const res = await fetch(`${API_URL}/users`, {

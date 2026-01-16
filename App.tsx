@@ -13,6 +13,7 @@ import MyRequests from './views/MyRequests';
 import TravelAgentDashboard from './views/TravelAgentDashboard';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
+import { Toaster } from "react-hot-toast";
 
 // Default Data for Fallback/Seeding
 const DEFAULT_REQUESTS: TravelRequest[] = [
@@ -69,6 +70,23 @@ const DEFAULT_USERS: User[] = [
 ];
 
 const App: React.FC = () => {
+    // Stats state
+  const [stats, setStats] = useState<any>(null);
+
+  // Fetch real stats from backend
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const fetchedStats = await api.getStats();
+        setStats(fetchedStats);
+      } catch (err) {
+        console.error("Failed to load stats:", err);
+      }
+    };
+
+    fetchStats();
+  }, []);
+
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.LOGIN);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -363,9 +381,10 @@ const handleLogin = (user: User) => {
             <>
               {currentView === ViewState.EMPLOYEE_DASHBOARD && (
                 <EmployeeDashboard 
-                  onNavigate={handleNavigate} 
-                  requests={requests}
-                />
+                onNavigate={handleNavigate}
+                requests={requests}
+                stats={stats}
+              />
               )}
               
               {currentView === ViewState.CREATE_REQUEST && (
@@ -376,13 +395,17 @@ const handleLogin = (user: User) => {
                 />
               )}
               
-              {currentView === ViewState.MY_REQUESTS && (
-                <MyRequests 
-                  requests={requests} 
-                  onDelete={handleDeleteRequest}
-                  onUpdateStatus={handleUpdateStatus}
-                />
-              )}
+             {currentView === ViewState.MY_REQUESTS && (
+  <MyRequests 
+    requests={requests} 
+    onDelete={handleDeleteRequest}
+    onUpdateStatus={handleUpdateStatus}
+    onViewRequest={handleViewRequest}
+    onCreateRequest={() => setCurrentView(ViewState.CREATE_REQUEST)}
+  />
+)}
+
+
               
               {(currentView === ViewState.MANAGER_DASHBOARD || currentView === ViewState.APPROVAL_LIST) && (
                 <ManagerDashboard 
@@ -416,7 +439,7 @@ const handleLogin = (user: User) => {
                  />
                   )}
 
-
+                  
               {currentView === ViewState.REQUEST_DETAILS && (
                 <RequestDetails 
                   requestId={selectedRequestId} 
@@ -430,6 +453,7 @@ const handleLogin = (user: User) => {
             </>
           )}
         </main>
+        <Toaster position="top-right" />
       </div>
     </div>
   );

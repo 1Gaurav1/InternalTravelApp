@@ -53,6 +53,15 @@ async getStats() {
     const res = await fetch(`${API_URL}/requests`);
     return handleResponse(res);
   },
+  sendAgentOptions: async (id: string, options: string[]) => {
+  const res = await fetch(`${API_URL}/requests/${id}/options`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ options })
+  });
+  return res.json();
+},
+
 
   createRequest: async (request: TravelRequest): Promise<TravelRequest> => {
     const res = await fetch(`${API_URL}/requests`, {

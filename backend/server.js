@@ -72,7 +72,10 @@ const requestSchema = new mongoose.Schema({
   purpose: String,
   submittedDate: String,
   agentNotes: String,
-  employeeAvatar: String
+  employeeAvatar: String,
+  agentOptions: [String],
+  agentNotes: String,
+
 });
 const TravelRequest = mongoose.model('TravelRequest', requestSchema);
 
@@ -191,5 +194,18 @@ app.get('/api/stats', async (req, res) => {
     percentChange: Number(percentChange.toFixed(2))
   });
 });
+// Agent sends travel options
+app.put('/api/requests/:id/options', async (req, res) => {
+  const { options } = req.body;
+
+  const updated = await TravelRequest.findOneAndUpdate(
+    { id: req.params.id },
+    { agentOptions: options, status: "Action Required" },
+    { new: true }
+  );
+
+  res.json(updated);
+});
+
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 

@@ -14,6 +14,8 @@ import TravelAgentDashboard from './views/TravelAgentDashboard';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import { Toaster } from "react-hot-toast";
+import TravelOptions from "./views/TravelOptions";
+
 
 // Default Data for Fallback/Seeding
 const DEFAULT_REQUESTS: TravelRequest[] = [
@@ -386,6 +388,15 @@ const handleLogin = (user: User) => {
                 stats={stats}
               />
               )}
+
+              {currentView === ViewState.SHARE_OPTIONS && (
+                <TravelOptions
+                  requests={requests}
+                  currentUser={currentUser}
+                  onUpdateStatus={handleUpdateStatus}
+                  />           
+              )}
+
               
               {currentView === ViewState.CREATE_REQUEST && (
                 <CreateRequest 

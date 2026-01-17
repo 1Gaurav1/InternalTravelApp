@@ -240,8 +240,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
         </div>
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Plan a Trip</h1>
-            <p className="text-gray-500 mt-2 text-lg">Where are you heading next?</p>
+            <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Create Request</h1>
+            <p className="text-gray-500 mt-2 text-lg">____________________________________________________________________________________</p>
           </div>
           
           {/* Trip Type Toggle */}

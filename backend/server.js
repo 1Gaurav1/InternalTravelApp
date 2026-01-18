@@ -4,8 +4,11 @@ import cors from 'cors';
 import 'dotenv/config'; 
 
 const app = express();
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+const port = process.env.PORT || 5000;
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Server running on port ${port}`);
+});
 
 app.use(cors());
 app.use(express.json());
@@ -206,6 +209,3 @@ app.put('/api/requests/:id/options', async (req, res) => {
 
   res.json(updated);
 });
-
-
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 

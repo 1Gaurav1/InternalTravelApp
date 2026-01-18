@@ -547,7 +547,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                       <Car size={18} className={cabRequired ? 'text-primary-600' : 'text-gray-400'} /> 
                       Cab Required
                    </div>
-                   <p className="text-sm text-gray-500 mt-0.5">Include pick-up and drop-off service with this request.</p>
+                   <p className="text-sm text-gray-500 mt-0.5">Include if you require a full day cab service</p>
                 </div>
               </label>
 

@@ -20,7 +20,7 @@ export const api = {
   },
 async getStats() {
   const res = await fetch(`${API_URL}/stats`);
-  return await res.json();
+  return handleResponse(res);
 },
 
   createUser: async (user: User): Promise<User> => {
@@ -88,3 +88,5 @@ async getStats() {
     return handleResponse(res);
   },
 };
+
+

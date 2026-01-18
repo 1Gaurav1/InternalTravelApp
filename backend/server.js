@@ -4,40 +4,18 @@ import cors from 'cors';
 import 'dotenv/config'; 
 
 const app = express();
-
 const port = process.env.PORT || 5000;
-app.listen(port, '0.0.0.0', () => {
-    console.log(`Server running on port ${port}`);
-});
 
-app.use(cors());
+// Middleware
+app.use(cors()); // Allows frontend to connect
 app.use(express.json());
 
-// Counter Schema
-const trCounterSchema = new mongoose.Schema({
-  date: String,
-  lastCounter: Number
+// --- 1. HEALTH CHECK ROUTE (Added) ---
+app.get('/', (req, res) => {
+  res.send('Backend is running! Use endpoints like /api/users');
 });
-const TRCounter = mongoose.model('TRCounter', trCounterSchema);
 
-async function generateTRId() {
-  const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-  let record = await TRCounter.findOne({ date: today });
-
-  let counter = 1;
-
-  if (record) {
-    counter = record.lastCounter + 1;
-    record.lastCounter = counter;
-    await record.save();
-  } else {
-    await TRCounter.create({ date: today, lastCounter: 1 });
-  }
-
-  return `TR-${today}-${String(counter).padStart(4, '0')}`;
-}
-
-// MONGO CONNECTION
+// --- MONGO CONNECTION ---
 mongoose
   .connect(process.env.MONGO_URI)
   .then(async () => {
@@ -46,7 +24,16 @@ mongoose
   })
   .catch(err => console.log('MongoDB Connection Error:', err));
 
-// SCHEMA
+// --- SCHEMAS ---
+
+// Counter Schema
+const trCounterSchema = new mongoose.Schema({
+  date: String,
+  lastCounter: Number
+});
+const TRCounter = mongoose.model('TRCounter', trCounterSchema);
+
+// User Schema
 const userSchema = new mongoose.Schema({
   id: String,
   name: String,
@@ -60,6 +47,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
+// Travel Request Schema
 const requestSchema = new mongoose.Schema({
   id: String,
   destination: String,
@@ -73,16 +61,35 @@ const requestSchema = new mongoose.Schema({
   department: String,
   type: String,
   purpose: String,
-  submittedDate: String,
-  agentNotes: String,
+  
+  // --- 2. FIXED: Changed to Date for stats queries to work ---
+  submittedDate: { type: Date, default: Date.now }, 
+  
   employeeAvatar: String,
   agentOptions: [String],
-  agentNotes: String,
-
+  
+  // --- 3. FIXED: Removed duplicate agentNotes ---
+  agentNotes: String, 
 });
 const TravelRequest = mongoose.model('TravelRequest', requestSchema);
 
-// Seeding
+// --- UTILS ---
+
+async function generateTRId() {
+  const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+  let record = await TRCounter.findOne({ date: today });
+  let counter = 1;
+
+  if (record) {
+    counter = record.lastCounter + 1;
+    record.lastCounter = counter;
+    await record.save();
+  } else {
+    await TRCounter.create({ date: today, lastCounter: 1 });
+  }
+  return `TR-${today}-${String(counter).padStart(4, '0')}`;
+}
+
 async function seedData() {
   const count = await User.countDocuments();
   if (count === 0) {
@@ -98,7 +105,7 @@ async function seedData() {
   }
 }
 
-// API Routes
+// --- API ROUTES ---
 
 // USERS
 app.get('/api/users', async (req, res) => {
@@ -130,12 +137,14 @@ app.get('/api/requests', async (req, res) => {
 
 app.post('/api/requests', async (req, res) => {
   const trId = await generateTRId();
+  // Ensure submittedDate is set if not provided
+  const requestData = {
+      ...req.body,
+      id: trId,
+      submittedDate: req.body.submittedDate || new Date()
+  };
 
-  const newReq = new TravelRequest({
-    ...req.body,
-    id: trId
-  });
-
+  const newReq = new TravelRequest(requestData);
   await newReq.save();
   res.json(newReq);
 });
@@ -153,59 +162,68 @@ app.put('/api/requests/:id/status', async (req, res) => {
   res.json(updatedReq);
 });
 
-app.delete('/api/requests/:id', async (req, res) => {
-  await TravelRequest.findOneAndDelete({ id: req.params.id });
-  res.json({ success: true });
-});
-app.get('/api/stats', async (req, res) => {
-  const now = new Date();
-  const startCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const endLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-
-  const currentCount = await TravelRequest.countDocuments({
-    submittedDate: { $gte: startCurrentMonth }
-  });
-
-  const previousCount = await TravelRequest.countDocuments({
-    submittedDate: { $gte: startLastMonth, $lte: endLastMonth }
-  });
-
-  const percentChange =
-    previousCount === 0
-      ? 100
-      : ((currentCount - previousCount) / previousCount) * 100;
-
-  const approved = await TravelRequest.countDocuments({
-    status: { $in: ["Booked", "Processing (Agent)"] }
-  });
-
-  const pending = await TravelRequest.countDocuments({
-    status: /Pending/
-  });
-
-  const rejected = await TravelRequest.countDocuments({
-    status: "Rejected"
-  });
-
-  res.json({
-    total: currentCount,
-    totalAllTime: await TravelRequest.countDocuments(),
-    approved,
-    pending,
-    rejected,
-    percentChange: Number(percentChange.toFixed(2))
-  });
-});
-// Agent sends travel options
 app.put('/api/requests/:id/options', async (req, res) => {
   const { options } = req.body;
-
   const updated = await TravelRequest.findOneAndUpdate(
     { id: req.params.id },
     { agentOptions: options, status: "Action Required" },
     { new: true }
   );
-
   res.json(updated);
+});
+
+app.delete('/api/requests/:id', async (req, res) => {
+  await TravelRequest.findOneAndDelete({ id: req.params.id });
+  res.json({ success: true });
+});
+
+// STATS
+app.get('/api/stats', async (req, res) => {
+  try {
+      const now = new Date();
+      const startCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const endLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+      const currentCount = await TravelRequest.countDocuments({
+        submittedDate: { $gte: startCurrentMonth }
+      });
+
+      const previousCount = await TravelRequest.countDocuments({
+        submittedDate: { $gte: startLastMonth, $lte: endLastMonth }
+      });
+
+      const percentChange = previousCount === 0
+          ? 100
+          : ((currentCount - previousCount) / previousCount) * 100;
+
+      const approved = await TravelRequest.countDocuments({
+        status: { $in: ["Booked", "Processing (Agent)"] }
+      });
+
+      const pending = await TravelRequest.countDocuments({
+        status: /Pending/
+      });
+
+      const rejected = await TravelRequest.countDocuments({
+        status: "Rejected"
+      });
+
+      res.json({
+        total: currentCount,
+        totalAllTime: await TravelRequest.countDocuments(),
+        approved,
+        pending,
+        rejected,
+        percentChange: Number(percentChange.toFixed(2))
+      });
+  } catch (error) {
+      console.error("Stats Error:", error);
+      res.status(500).json({ message: "Error fetching stats" });
+  }
+});
+
+// START SERVER
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Server running on port ${port}`);
 });

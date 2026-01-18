@@ -1,7 +1,7 @@
 
 import { TravelRequest, User, RequestStatus } from './types';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://internaltravelapp.onrender.com';
 
 // Helper to handle response errors
 const handleResponse = async (response: Response) => {

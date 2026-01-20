@@ -246,6 +246,7 @@ const MyRequests: React.FC<MyRequestsProps> = ({
         title="Delete Request?"
         message={`Are you sure you want to delete your travel request to ${selectedRequest?.dest}?`}
         confirmText="Delete Request"
+        type="danger"
       />
 
       {/* RESPOND MODAL */}

@@ -1,201 +1,239 @@
-
-import React, { useState } from 'react';
-import { UserRole, User } from '../types';
+import React, { useState, useEffect } from 'react';
+import { User, UserStatus } from '../types';
+import { api } from '../api';
+import { Search, Plus, Filter, MoreVertical, Edit2, Trash2, Shield, Mail, CheckSquare, Square, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 import ConfirmationModal from '../components/ConfirmationModal';
-import { 
-  Search, Filter, Shield, Edit2, Check, X, User as UserIcon, 
-  Trash2, Unlock, Lock 
-} from 'lucide-react';
 
-interface UserManagementProps {
-    users: User[];
-    onUpdateUser: (user: User) => void;
-    onDeleteUser: (id: string) => void;
-}
+const UserManagement: React.FC = () => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateUser, onDeleteUser }) => {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  // Modal States
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   
-  // Modal State
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalAction, setModalAction] = useState<{ type: 'suspend' | 'activate' | 'delete', userId: string, userName: string } | null>(null);
+  // Delete Modal State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
-  const handleEditClick = (user: User) => {
-    setEditingId(user.id);
-    setSelectedRole(user.role);
-  };
+  // Form Data State
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    role: [] as string[],
+    department: 'Sales',
+    status: 'Active' as UserStatus
+  });
 
-  const handleSaveRole = (user: User) => {
-    if (selectedRole) {
-      onUpdateUser({ ...user, role: selectedRole });
-      setEditingId(null);
-      setSelectedRole(null);
+  const availableRoles = ['EMPLOYEE', 'MANAGER', 'ADMIN', 'SUPER_ADMIN', 'TRAVEL_AGENT'];
+  const departments = ['Sales', 'IT', 'HR', 'Product', 'Executive', 'Operations'];
+
+  // --- DATA LOADING ---
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      setIsLoading(true);
+      const data = await api.getUsers();
+      
+      // Safety: Ensure 'role' is always an array (handles legacy data)
+      const sanitizedUsers = data.map((u: any) => ({
+          ...u,
+          role: Array.isArray(u.role) ? u.role : [u.role] 
+      }));
+      setUsers(sanitizedUsers);
+    } catch (error) {
+      console.error('Failed to load users', error);
+      toast.error("Failed to load user list");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const initiateStatusChange = (user: User) => {
-    const actionType = user.status === 'Active' ? 'suspend' : 'activate';
-    setModalAction({ type: actionType, userId: user.id, userName: user.name });
-    setModalOpen(true);
+  // --- ACTIONS ---
+
+  const handleEdit = (user: User) => {
+    setEditingUser(user);
+    setFormData({
+      name: user.name,
+      email: user.email,
+      role: user.role, 
+      department: user.department,
+      status: user.status as UserStatus
+    });
+    setIsFormOpen(true);
   };
 
-  const initiateDelete = (user: User) => {
-    setModalAction({ type: 'delete', userId: user.id, userName: user.name });
-    setModalOpen(true);
+  const initiateDelete = (id: string) => {
+    setUserToDelete(id);
+    setIsDeleteModalOpen(true);
   };
 
-  const confirmAction = () => {
-    if (!modalAction) return;
-    const user = users.find(u => u.id === modalAction.userId);
-    if (!user && modalAction.type !== 'delete') return;
-
-    if (modalAction.type === 'suspend') {
-      onUpdateUser({ ...user!, status: 'Suspended' });
-    } else if (modalAction.type === 'activate') {
-        onUpdateUser({ ...user!, status: 'Active' });
-    } else if (modalAction.type === 'delete') {
-      onDeleteUser(modalAction.userId);
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
+    try {
+      await api.deleteUser(userToDelete);
+      setUsers(prev => prev.filter(u => u.id !== userToDelete));
+      toast.success("User deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete user");
     }
   };
 
-  const getRoleColor = (role: UserRole) => {
-    switch (role) {
-      case UserRole.SUPER_ADMIN: return 'bg-purple-100 text-purple-700 border-purple-200';
-      case UserRole.ADMIN: return 'bg-indigo-100 text-indigo-700 border-indigo-200';
-      case UserRole.MANAGER: return 'bg-pink-100 text-pink-700 border-pink-200';
-      default: return 'bg-gray-100 text-gray-700 border-gray-200';
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (formData.role.length === 0) {
+        toast.error("Please select at least one role.");
+        return;
     }
+
+    try {
+      if (editingUser) {
+        // Update existing
+        await api.updateUser(editingUser.id, formData);
+        setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, ...formData } : u));
+        toast.success("User updated successfully");
+      } else {
+        // Create new
+        const newUser = await api.createUser({
+            ...formData,
+            id: '', // Backend generates ID
+            password: '123' // Default password logic
+        } as User);
+        setUsers(prev => [...prev, newUser]);
+        toast.success("User created successfully");
+      }
+      closeForm();
+    } catch (error) {
+      console.error(error);
+      toast.error("Operation failed");
+    }
+  };
+
+  const closeForm = () => {
+    setIsFormOpen(false);
+    setEditingUser(null);
+    setFormData({
+      name: '',
+      email: '',
+      role: ['EMPLOYEE'],
+      department: 'Sales',
+      status: 'Active'
+    });
+  };
+
+  const toggleRole = (roleToToggle: string) => {
+    setFormData(prev => {
+      const roles = prev.role.includes(roleToToggle)
+        ? prev.role.filter(r => r !== roleToToggle)
+        : [...prev.role, roleToToggle];
+      return { ...prev, role: roles };
+    });
   };
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="p-6 max-w-7xl mx-auto animate-fade-in pb-20">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">User Management</h1>
-          <p className="text-gray-500 mt-1">Manage access control, permissions, and user roles across the organization.</p>
+          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+          <p className="text-gray-500 mt-1">Manage system access, roles, and permissions.</p>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-black shadow-lg shadow-gray-900/20 transition-all">
-          <UserIcon size={18} /> Add New User
+        <button 
+          onClick={() => { setEditingUser(null); setIsFormOpen(true); }}
+          className="bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-black transition-all flex items-center gap-2 shadow-lg shadow-gray-900/20"
+        >
+          <Plus size={18} /> Add User
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        {/* Toolbar */}
-        <div className="p-4 border-b border-gray-100 flex flex-wrap gap-4 justify-between items-center bg-gray-50/50">
-           <div className="relative max-w-md w-full md:w-96">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Search by name, email, or role..." 
-                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-300 transition-all" 
-              />
-           </div>
-           <div className="flex gap-2">
-              <button className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
-                 <Filter size={16} /> Status
-              </button>
-              <button className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
-                 <Shield size={16} /> Role
-              </button>
-           </div>
-        </div>
-
-        {/* Table */}
+      {/* Table Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {isLoading ? (
+            <div className="p-12 text-center text-gray-500 flex flex-col items-center">
+                <div className="animate-spin w-8 h-8 border-2 border-gray-300 border-t-blue-600 rounded-full mb-4"></div>
+                Loading users...
+            </div>
+        ) : users.length === 0 ? (
+            <div className="p-12 text-center text-gray-500">No users found. Create one to get started.</div>
+        ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">User Profile</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Current Role</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Permissions Level</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+          <table className="w-full">
+            <thead className="bg-gray-50/50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">User Profile</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Assigned Roles</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Department</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-50">
               {users.map((user) => (
-                <tr key={user.id} className={`group transition-colors ${user.status === 'Suspended' ? 'bg-gray-50/80' : 'hover:bg-gray-50/50'}`}>
+                <tr key={user.id} className="hover:bg-gray-50/50 transition-colors group">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <img src={user.avatar} className={`w-10 h-10 rounded-full object-cover border-2 ${user.status === 'Suspended' ? 'grayscale border-gray-200' : 'border-white shadow-sm'}`} alt="" />
-                        <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${user.status === 'Active' ? 'bg-green-500' : 'bg-gray-400'}`}></span>
-                      </div>
+                      <img 
+                        src={user.avatar || `https://ui-avatars.com/api/?name=${user.name}&background=random`} 
+                        alt="" 
+                        className="w-10 h-10 rounded-full border-2 border-white shadow-sm object-cover" 
+                      />
                       <div>
-                        <p className={`text-sm font-bold ${user.status === 'Suspended' ? 'text-gray-500' : 'text-gray-900'}`}>{user.name}</p>
-                        <p className="text-xs text-gray-500">{user.email}</p>
+                        <div className="font-bold text-gray-900 text-sm">{user.name}</div>
+                        <div className="text-xs text-gray-500">{user.email}</div>
                       </div>
                     </div>
                   </td>
-                  
                   <td className="px-6 py-4">
-                    {editingId === user.id ? (
-                      <div className="flex items-center gap-2">
-                        <select 
-                          value={selectedRole || user.role}
-                          onChange={(e) => setSelectedRole(e.target.value as UserRole)}
-                          className="px-2 py-1.5 bg-white border border-primary-300 rounded-lg text-sm text-gray-700 outline-none focus:ring-2 focus:ring-primary-100"
-                        >
-                          <option value={UserRole.EMPLOYEE}>Employee</option>
-                          <option value={UserRole.MANAGER}>Manager</option>
-                          <option value={UserRole.ADMIN}>Admin</option>
-                          <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
-                        </select>
-                        <button onClick={() => handleSaveRole(user)} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"><Check size={14} /></button>
-                        <button onClick={() => setEditingId(null)} className="p-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"><X size={14} /></button>
-                      </div>
-                    ) : (
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${getRoleColor(user.role)}`}>
-                        {user.role === UserRole.SUPER_ADMIN && <Shield size={12} fill="currentColor" />}
-                        {user.role.replace('_', ' ')}
-                      </span>
-                    )}
-                  </td>
-
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-xs text-gray-600 font-medium">
-                        {user.role === UserRole.EMPLOYEE && "Basic Access"}
-                        {user.role === UserRole.MANAGER && "Approve, View Team"}
-                        {user.role === UserRole.ADMIN && "System Config, Reports"}
-                        {user.role === UserRole.SUPER_ADMIN && "Full System Control"}
-                      </span>
-                      <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full ${user.role === UserRole.SUPER_ADMIN ? 'bg-purple-500 w-full' : user.role === UserRole.ADMIN ? 'bg-indigo-500 w-3/4' : user.role === UserRole.MANAGER ? 'bg-pink-500 w-1/2' : 'bg-gray-400 w-1/4'}`}
-                        ></div>
-                      </div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {user.role.map((r) => (
+                            <span key={r} className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${
+                                r === 'SUPER_ADMIN' ? 'bg-purple-50 text-purple-700 border-purple-100' :
+                                r === 'ADMIN' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
+                                'bg-gray-50 text-gray-600 border-gray-200'
+                            }`}>
+                                {r.replace('_', ' ')}
+                            </span>
+                        ))}
                     </div>
                   </td>
-
                   <td className="px-6 py-4">
-                     <button 
-                      onClick={() => initiateStatusChange(user)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${user.status === 'Active' ? 'bg-green-50 text-green-700 border-green-200 hover:bg-red-50 hover:text-red-700 hover:border-red-200 hover:content-["Suspend"]' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-green-50 hover:text-green-700 hover:content-["Activate"]'}`}
-                     >
-                       {user.status}
-                     </button>
+                    <span className="text-sm text-gray-600 font-medium bg-gray-100/50 px-2 py-1 rounded-md border border-gray-100">
+                        {user.department}
+                    </span>
                   </td>
-
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                      user.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
+                      user.status === 'Suspended' ? 'bg-red-50 text-red-700 border-red-100' :
+                      'bg-gray-50 text-gray-600 border-gray-200'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                        user.status === 'Active' ? 'bg-emerald-500' : 
+                        user.status === 'Suspended' ? 'bg-red-500' : 'bg-gray-400'
+                      }`}></span>
+                      {user.status}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                       {user.status === 'Suspended' ? (
-                          <button onClick={() => initiateStatusChange(user)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Unlock Account">
-                             <Unlock size={16} />
-                          </button>
-                       ) : (
-                          <button onClick={() => initiateStatusChange(user)} className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title="Suspend Account">
-                             <Lock size={16} />
-                          </button>
-                       )}
-                       
-                       <button onClick={() => handleEditClick(user)} className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" title="Edit Role">
-                          <Edit2 size={16} />
-                       </button>
-                       <button onClick={() => initiateDelete(user)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete User">
-                          <Trash2 size={16} />
-                       </button>
+                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button 
+                        onClick={() => handleEdit(user)} 
+                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                        title="Edit User"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button 
+                        onClick={() => initiateDelete(user.id)} 
+                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        title="Delete User"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -203,30 +241,132 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateUser, on
             </tbody>
           </table>
         </div>
-        
-        <div className="p-4 border-t border-gray-100 bg-gray-50/30 flex justify-between items-center">
-             <p className="text-xs text-gray-500">Showing <span className="font-bold text-gray-900">{users.length}</span> active accounts</p>
-             <div className="flex gap-2">
-                 <button className="px-3 py-1 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">Previous</button>
-                 <button className="px-3 py-1 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">Next</button>
-             </div>
-        </div>
+        )}
       </div>
 
+      {/* Edit/Create Modal */}
+      {isFormOpen && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h3 className="text-lg font-bold text-gray-900">{editingUser ? 'Edit User Profile' : 'Create New User'}</h3>
+              <button onClick={closeForm} className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-lg">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="p-6 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Full Name</label>
+                    <input 
+                      type="text" 
+                      value={formData.name}
+                      onChange={e => setFormData({...formData, name: e.target.value})}
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-gray-900 focus:border-transparent outline-none transition-all text-sm font-medium"
+                      placeholder="e.g. John Doe"
+                      required 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Department</label>
+                    <select 
+                        value={formData.department}
+                        onChange={e => setFormData({...formData, department: e.target.value})}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-gray-900 focus:border-transparent outline-none transition-all text-sm bg-white"
+                    >
+                        {departments.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Email Address</label>
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input 
+                    type="email" 
+                    value={formData.email}
+                    onChange={e => setFormData({...formData, email: e.target.value})}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-gray-900 focus:border-transparent outline-none transition-all text-sm"
+                    placeholder="john@company.com"
+                    required 
+                  />
+                </div>
+              </div>
+
+              {/* Roles Section */}
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-3">System Roles (Multi-Select)</label>
+                <div className="grid grid-cols-2 gap-2">
+                    {availableRoles.map(role => {
+                        const isSelected = formData.role.includes(role);
+                        return (
+                            <div 
+                                key={role}
+                                onClick={() => toggleRole(role)}
+                                className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-all select-none ${
+                                    isSelected 
+                                    ? 'bg-white border-blue-500 ring-1 ring-blue-500 shadow-sm' 
+                                    : 'bg-white border-gray-200 hover:border-gray-300 text-gray-500'
+                                }`}
+                            >
+                                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                                    isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'
+                                }`}>
+                                    {isSelected && <CheckSquare size={12} className="text-white" />}
+                                </div>
+                                <span className={`text-xs font-bold ${isSelected ? 'text-blue-700' : 'text-gray-600'}`}>
+                                    {role.replace('_', ' ')}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Account Status</label>
+                <select 
+                  value={formData.status}
+                  onChange={e => setFormData({...formData, status: e.target.value as UserStatus})}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-gray-900 focus:border-transparent outline-none transition-all text-sm bg-white"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Suspended">Suspended</option>
+                </select>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button 
+                  type="button" 
+                  onClick={closeForm}
+                  className="flex-1 px-4 py-3 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-bold text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="flex-1 px-4 py-3 bg-gray-900 text-white rounded-xl hover:bg-black font-bold text-sm transition-all shadow-lg shadow-gray-900/20"
+                >
+                  {editingUser ? 'Save Changes' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
       <ConfirmationModal 
-        isOpen={modalOpen} 
-        onClose={() => setModalOpen(false)}
-        onConfirm={confirmAction}
-        title={modalAction?.type === 'delete' ? 'Delete User?' : modalAction?.type === 'suspend' ? 'Suspend User Account?' : 'Activate User Account?'}
-        message={
-          modalAction?.type === 'delete' 
-          ? `Are you sure you want to permanently delete ${modalAction.userName}? This action cannot be undone and will remove all associated data.`
-          : modalAction?.type === 'suspend'
-            ? `Are you sure you want to suspend ${modalAction.userName}? They will no longer be able to log in to the platform.`
-            : `Re-activate ${modalAction?.userName}? They will regain access to their account immediately.`
-        }
-        type={modalAction?.type === 'activate' ? 'info' : 'danger'}
-        confirmText={modalAction?.type === 'delete' ? 'Delete User' : modalAction?.type === 'suspend' ? 'Suspend Account' : 'Activate Account'}
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Delete User Account"
+        message="Are you sure you want to permanently delete this user? This action cannot be undone and they will lose access immediately."
+        confirmText="Yes, Delete User"
+        type="danger"
       />
     </div>
   );

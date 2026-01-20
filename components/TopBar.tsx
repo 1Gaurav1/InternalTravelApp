@@ -1,10 +1,9 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Bell, Menu, X, ChevronDown, Check } from 'lucide-react';
-import { UserRole, Notification, ViewState } from '../types';
+import { Search, Bell, Menu, ChevronDown } from 'lucide-react';
+import { Notification, ViewState } from '../types'; // Removed UserRole import as we use string[]
 
 interface TopBarProps {
-  userRole: UserRole;
+  userRole: string[]; // <--- CHANGED: Expecting an Array now
   onToggleSidebar: () => void;
   notifications: Notification[];
   onMarkAsRead: (id: string) => void;
@@ -12,6 +11,9 @@ interface TopBarProps {
 }
 
 const TopBar: React.FC<TopBarProps> = ({ userRole, onToggleSidebar, notifications, onMarkAsRead, onNavigate }) => {
+  // Safe array conversion in case old data comes through
+  const roles = Array.isArray(userRole) ? userRole : [userRole];
+
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
@@ -118,12 +120,12 @@ const TopBar: React.FC<TopBarProps> = ({ userRole, onToggleSidebar, notification
                       onClick={() => onMarkAsRead(notif.id)}
                       className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer flex gap-3 ${notif.read ? 'opacity-60' : 'bg-blue-50/30'}`}
                     >
-                       <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${notif.read ? 'bg-gray-300' : 'bg-primary-500'}`}></div>
-                       <div>
+                        <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${notif.read ? 'bg-gray-300' : 'bg-primary-500'}`}></div>
+                        <div>
                           <p className={`text-sm ${notif.read ? 'text-gray-600' : 'text-gray-900 font-semibold'}`}>{notif.title}</p>
                           <p className="text-xs text-gray-500 mt-1 line-clamp-2">{notif.message}</p>
                           <p className="text-[10px] text-gray-400 mt-2">{notif.time}</p>
-                       </div>
+                        </div>
                     </div>
                   ))
                 )}
@@ -137,9 +139,13 @@ const TopBar: React.FC<TopBarProps> = ({ userRole, onToggleSidebar, notification
         
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full cursor-pointer hover:shadow-sm transition-shadow">
            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-primary-500 to-purple-500 text-[10px] text-white flex items-center justify-center font-bold">
-              {userRole[0]}
+              {/* FIXED: Get first letter of first role */}
+              {roles[0]?.charAt(0)}
            </div>
-           <span className="text-xs font-medium text-gray-700 pr-1 capitalize">{userRole.toLowerCase().replace('_', ' ')}</span>
+           {/* FIXED: Join roles with comma */}
+           <span className="text-xs font-medium text-gray-700 pr-1 capitalize">
+              {roles.map(r => r.toLowerCase().replace('_', ' ')).join(', ')}
+           </span>
            <ChevronDown size={14} className="text-gray-400" />
         </div>
       </div>

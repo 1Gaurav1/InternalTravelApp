@@ -1,28 +1,30 @@
-
-export enum ViewState {
-  LOGIN = 'LOGIN',
-  EMPLOYEE_DASHBOARD = 'EMPLOYEE_DASHBOARD',
-  CREATE_REQUEST = 'CREATE_REQUEST',
-  MY_REQUESTS = 'MY_REQUESTS',
-  MANAGER_DASHBOARD = 'MANAGER_DASHBOARD',
-  APPROVAL_LIST = 'APPROVAL_LIST',
-  REQUEST_DETAILS = 'REQUEST_DETAILS',
-  SHARE_OPTIONS = 'SHARE_OPTIONS',
-  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD',
-  ADMIN_REPORTS = 'ADMIN_REPORTS',
-  USER_MANAGEMENT = 'USER_MANAGEMENT',
-  TRAVEL_AGENT_DASHBOARD = 'TRAVEL_AGENT_DASHBOARD',
-
-}
+// types.ts
 
 export enum UserRole {
   EMPLOYEE = 'EMPLOYEE',
   MANAGER = 'MANAGER',
   ADMIN = 'ADMIN',
   SUPER_ADMIN = 'SUPER_ADMIN',
-  TRAVEL_AGENT = 'TRAVEL_AGENT',
+  TRAVEL_AGENT = 'TRAVEL_AGENT'
 }
 
+export enum ViewState {
+  LOGIN = 'LOGIN',
+  EMPLOYEE_DASHBOARD = 'EMPLOYEE_DASHBOARD',
+  MANAGER_DASHBOARD = 'MANAGER_DASHBOARD',
+  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD',
+  SUPER_ADMIN_DASHBOARD = 'SUPER_ADMIN_DASHBOARD', 
+  TRAVEL_AGENT_DASHBOARD = 'TRAVEL_AGENT_DASHBOARD',
+  CREATE_REQUEST = 'CREATE_REQUEST',
+  REQUEST_DETAILS = 'REQUEST_DETAILS',
+  APPROVAL_LIST = 'APPROVAL_LIST',
+  ADMIN_REPORTS = 'ADMIN_REPORTS',
+  USER_MANAGEMENT = 'USER_MANAGEMENT',
+  MY_REQUESTS = 'MY_REQUESTS',
+  SHARE_OPTIONS = 'SHARE_OPTIONS'
+}
+
+// Status for Travel Requests (Trip Progress)
 export type RequestStatus = 
   | 'Pending Manager' 
   | 'Pending Admin' 
@@ -31,45 +33,29 @@ export type RequestStatus =
   | 'Booked' 
   | 'Rejected';
 
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  password?: string; // For prototype auth
-  role: UserRole;
-  department: string;
-  status: 'Active' | 'Suspended';
-  lastActive: string;
-  avatar: string;
-}
+// Status for Users (Account Status)
+export type UserStatus = 'Active' | 'Inactive' | 'Suspended';
 
 export interface TravelRequest {
-  id?: string;
+  id?: string; 
   destination: string;
   startDate: string;
   endDate: string;
-  startTime: string; 
-  endTime: string;   
-  status: RequestStatus;
-  amount: number; 
-  policyViolations?: string[];
+  startTime?: string;
+  endTime?: string;
+  status: RequestStatus; // Use RequestStatus here
+  amount: number;
   employeeName: string;
-  preferredFlight?: string;
   employeeAvatar?: string;
   department: string;
   type: 'Domestic' | 'International';
-  purpose?: string;
   submittedDate: string;
-  agentNotes?: string; // New field for agent options
-}
-
-export interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  time: string;
-  read: boolean;
-  type: 'success' | 'info' | 'warning' | 'error';
+  purpose?: string;
+  agentNotes?: string;
+  preferredFlight?: string;
+  
+  flightOptions?: FlightOption[];
+  selectedOptionId?: string;
 }
 
 export interface FlightOption {
@@ -78,16 +64,27 @@ export interface FlightOption {
   flightNumber: string;
   departureTime: string;
   arrivalTime: string;
-  duration: string;
   price: number;
-  logo: string;
+  isSelected?: boolean;
 }
 
-export interface HotelOption {
+export interface User {
   id: string;
   name: string;
-  address: string;
-  rating: number;
-  pricePerNight: number;
-  image: string;
+  email: string;
+  password?: string;
+  role: string[]; 
+  department: string;
+  status: UserStatus; // Use UserStatus here (Active/Inactive/Suspended)
+  lastActive?: string;
+  avatar?: string;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  read: boolean;
+  type: 'info' | 'success' | 'warning' | 'error';
 }

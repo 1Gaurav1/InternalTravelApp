@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ViewState, UserRole, User } from '../types';
 import { 
@@ -8,20 +7,18 @@ import {
   LogOut, 
   Plane,
   FileCheck,
-  PieChart,
-  ShieldCheck,
-  Users,
+  Users, 
   BarChart3,
-  Globe,
   Briefcase,
-  X
+  X,
+  ShieldCheck
 } from 'lucide-react';
 
 interface SidebarProps {
   currentView: ViewState;
   onNavigate: (view: ViewState) => void;
   onLogout: () => void;
-  userRole: UserRole;
+  userRole: string[]; 
   currentUser?: User | null;
   isOpen: boolean;
   onClose: () => void;
@@ -29,34 +26,65 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, userRole, currentUser, isOpen, onClose }) => {
   
+  const roles = Array.isArray(userRole) ? userRole : [userRole];
+
+  // --- 1. SHARED MENUS ---
+  // Commented out as requested
+  // const personalTravelMenu = [
+  //   { view: ViewState.CREATE_REQUEST, label: 'New Trip', icon: PlusCircle },
+  //   { view: ViewState.MY_REQUESTS, label: 'My Trips', icon: Plane },
+  // ];
+
+  // --- 2. ROLE SPECIFIC MENUS ---
+  
   const employeeMenu = [
     { view: ViewState.EMPLOYEE_DASHBOARD, label: 'Dashboard', icon: LayoutDashboard },
-    { view: ViewState.CREATE_REQUEST, label: 'Create Request', icon: PlusCircle },
-    { view: ViewState.MY_REQUESTS, label: 'My Requests', icon: List },
-    { view: ViewState.SHARE_OPTIONS, label: 'Travel Options', icon: Plane },
+    { view: ViewState.CREATE_REQUEST, label: 'New Trip', icon: PlusCircle },
+    { view: ViewState.MY_REQUESTS, label: 'My Trips', icon: Plane },
+    // ...personalTravelMenu
   ];
 
   const managerMenu = [
-    { view: ViewState.MANAGER_DASHBOARD, label: 'Dashboard', icon: LayoutDashboard },
-    { view: ViewState.APPROVAL_LIST, label: 'Approval List', icon: FileCheck },
+    { view: ViewState.MANAGER_DASHBOARD, label: 'Manager Console', icon: LayoutDashboard },
+    { view: ViewState.APPROVAL_LIST, label: 'Team Approvals', icon: FileCheck },
+    // ...personalTravelMenu
   ];
 
   const adminMenu = [
-    { view: ViewState.ADMIN_DASHBOARD, label: 'Admin Console', icon: LayoutDashboard },
-    { view: ViewState.ADMIN_REPORTS, label: 'Global Reports', icon: BarChart3 },
-    // { view: ViewState.USER_MANAGEMENT, label: 'User Management', icon: Users },
-    ...(userRole === UserRole.SUPER_ADMIN ? [{ view: ViewState.ADMIN_REPORTS, label: 'System Health', icon: Globe }] : [])
+    { 
+      view: roles.includes(UserRole.SUPER_ADMIN) ? ViewState.SUPER_ADMIN_DASHBOARD : ViewState.ADMIN_DASHBOARD, 
+      label: roles.includes(UserRole.SUPER_ADMIN) ? 'Super Control' : 'Admin Console', 
+      icon: roles.includes(UserRole.SUPER_ADMIN) ? ShieldCheck : LayoutDashboard 
+    },
+    ...(roles.includes(UserRole.SUPER_ADMIN) ? [
+        { view: ViewState.USER_MANAGEMENT, label: 'User Management', icon: Users },
+    ] : []),
+    // ...personalTravelMenu
   ];
 
   const agentMenu = [
     { view: ViewState.TRAVEL_AGENT_DASHBOARD, label: 'Agent Console', icon: Briefcase },
-    { view: ViewState.ADMIN_REPORTS, label: 'Bookings', icon: List },
+    { view: ViewState.ADMIN_REPORTS, label: 'All Bookings', icon: List }, 
+    // ...personalTravelMenu
   ];
 
+  // --- 3. MENU SELECTION LOGIC ---
   let menuItems = employeeMenu;
-  if (userRole === UserRole.MANAGER) menuItems = managerMenu;
-  if (userRole === UserRole.ADMIN || userRole === UserRole.SUPER_ADMIN) menuItems = adminMenu;
-  if (userRole === UserRole.TRAVEL_AGENT) menuItems = agentMenu;
+  let roleLabel = 'Employee Portal';
+
+  if (roles.includes(UserRole.SUPER_ADMIN)) {
+    menuItems = adminMenu;
+    roleLabel = 'Super Admin';
+  } else if (roles.includes(UserRole.ADMIN)) {
+    menuItems = adminMenu;
+    roleLabel = 'Administrator';
+  } else if (roles.includes(UserRole.TRAVEL_AGENT)) {
+    menuItems = agentMenu;
+    roleLabel = 'Travel Desk';
+  } else if (roles.includes(UserRole.MANAGER)) {
+    menuItems = managerMenu;
+    roleLabel = 'Manager';
+  }
 
   return (
     <>
@@ -68,20 +96,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, us
           <div className="p-8 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-primary-500/20">
-            <img 
-              src="/travel.png" 
-              className="w-full h-full object-cover" 
-              alt="logo"
-            />
-            </div>
+                <img 
+                  src="/travel.png" 
+                  className="w-full h-full object-cover" 
+                  alt="logo"
+                  onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/40'; }} 
+                />
+              </div>
 
               <div>
                 <h1 className="text-xl font-bold text-gray-900 tracking-tight leading-none">Renee Travel</h1>
                 <p className="text-[10px] uppercase font-bold text-gray-400 mt-1 tracking-wider">
-                  {userRole === UserRole.SUPER_ADMIN ? 'Super Admin' : 
-                   userRole === UserRole.ADMIN ? 'Administrator' : 
-                   userRole === UserRole.MANAGER ? 'Manager' : 
-                   userRole === UserRole.TRAVEL_AGENT ? 'Travel Desk' : 'Employee Portal'}
+                  {roleLabel}
                 </p>
               </div>
             </div>
@@ -122,12 +148,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, us
           </button>
           
           <div className="flex items-center gap-3 px-4 py-2">
-            <img src={currentUser?.avatar || `https://picsum.photos/seed/${userRole}/100/100`} alt="Profile" className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" />
+            <img 
+                src={currentUser?.avatar || `https://ui-avatars.com/api/?name=${currentUser?.name || 'User'}`} 
+                alt="Profile" 
+                className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" 
+            />
             <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-gray-900 truncate">
                   {currentUser?.name || 'Guest User'}
                 </p>
-                <p className="text-xs text-gray-500 truncate capitalize">{userRole.toLowerCase().replace('_', ' ')}</p>
+                <p className="text-xs text-gray-500 truncate capitalize">
+                    {roles.map(r => r.toLowerCase().replace('_', ' ')).join(', ')}
+                </p>
             </div>
           </div>
         </div>

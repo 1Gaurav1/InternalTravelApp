@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ViewState, UserRole, Notification, TravelRequest, RequestStatus, User } from './types';
 import { api } from './api';
@@ -6,6 +5,7 @@ import LoginView from './views/LoginView';
 import EmployeeDashboard from './views/EmployeeDashboard';
 import ManagerDashboard from './views/ManagerDashboard';
 import AdminDashboard from './views/AdminDashboard';
+import SuperAdminDashboard from './views/SuperAdminDashboard'; // <--- IMPORTED
 import UserManagement from './views/UserManagement';
 import CreateRequest from './views/CreateRequest';
 import RequestDetails from './views/RequestDetails';
@@ -16,79 +16,10 @@ import TopBar from './components/TopBar';
 import { Toaster } from "react-hot-toast";
 import TravelOptions from "./views/TravelOptions";
 
-
-// Default Data for Fallback/Seeding
-const DEFAULT_REQUESTS: TravelRequest[] = [
-  { 
-    id: 'TR-8821', 
-    destination: 'London, UK', 
-    startDate: '2026-10-12', 
-    endDate: '2026-10-15', 
-    startTime: '07:00 AM',
-    endTime: '10:00 AM',
-    status: 'Pending Manager', 
-    amount: 272000, 
-    employeeName: 'Sarah Jenkins', 
-    department: 'Marketing',
-    type: 'International',
-    submittedDate: 'Oct 10, 2026'
-  },
-  { 
-    id: 'TR-8822', 
-    destination: 'Mumbai, Maharashtra', 
-    startDate: '2026-10-14', 
-    endDate: '2026-10-16', 
-    startTime: '09:00 AM',
-    endTime: '12:00 PM',
-    status: 'Pending Admin', 
-    amount: 72500, 
-    employeeName: 'Mike Ross', 
-    department: 'Sales',
-    type: 'Domestic',
-    submittedDate: 'Oct 11, 2026'
-  },
-  { 
-    id: 'TR-8823', 
-    destination: 'Singapore', 
-    startDate: '2026-11-01', 
-    endDate: '2026-11-05', 
-    startTime: '06:00 AM',
-    endTime: '11:00 PM',
-    status: 'Processing (Agent)', 
-    amount: 150000, 
-    employeeName: 'Jessica Lee', 
-    department: 'Finance',
-    type: 'International',
-    submittedDate: 'Oct 15, 2026'
-  }
-];
-
-const DEFAULT_USERS: User[] = [
-  { id: '1', name: 'Alex Morgan', email: 'employee@renee.com', password: '123', role: UserRole.EMPLOYEE, department: 'Product', status: 'Active', lastActive: '2 mins ago', avatar: 'https://picsum.photos/seed/alex/200' },
-  { id: '2', name: 'James Wilson', email: 'manager@renee.com', password: '123', role: UserRole.MANAGER, department: 'Sales', status: 'Active', lastActive: '1 hour ago', avatar: 'https://picsum.photos/seed/james/200' },
-  { id: '3', name: 'Sarah Jenkins', email: 'admin@renee.com', password: '123', role: UserRole.ADMIN, department: 'IT', status: 'Active', lastActive: '5 hours ago', avatar: 'https://picsum.photos/seed/sarah/200' },
-  { id: '4', name: 'Super Admin', email: 'super@renee.com', password: '123', role: UserRole.SUPER_ADMIN, department: 'Executive', status: 'Active', lastActive: 'Just now', avatar: 'https://picsum.photos/seed/super/200' },
-  { id: '5', name: 'Travel Desk', email: 'agent@renee.com', password: '123', role: UserRole.TRAVEL_AGENT, department: 'Operations', status: 'Active', lastActive: '10 mins ago', avatar: 'https://picsum.photos/seed/agent/200' },
-];
-
 const App: React.FC = () => {
-    // Stats state
+  // Stats state
   const [stats, setStats] = useState<any>(null);
-
-  // Fetch real stats from backend
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const fetchedStats = await api.getStats();
-        setStats(fetchedStats);
-      } catch (err) {
-        console.error("Failed to load stats:", err);
-      }
-    };
-
-    fetchStats();
-  }, []);
-
+  
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.LOGIN);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -96,65 +27,73 @@ const App: React.FC = () => {
   
   // Data State
   const [requests, setRequests] = useState<TravelRequest[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [backendError, setBackendError] = useState(false);
 
-  const [notifications, setNotifications] = useState<Notification[]>([
-    { id: '1', title: 'System Update', message: 'Platform maintenance scheduled for Sunday.', time: '2h ago', read: false, type: 'info' }
-  ]);
+  // Initialize empty notifications
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  // Initial Data Fetch
+  // Helper to determine dashboard based on role priority
+  const getInitialView = (roles: string[]): ViewState => {
+    if (roles.includes(UserRole.SUPER_ADMIN)) {
+        return ViewState.SUPER_ADMIN_DASHBOARD; // <--- Correctly point to new dashboard
+    }
+    if (roles.includes(UserRole.ADMIN)) {
+        return ViewState.ADMIN_DASHBOARD;
+    }
+    if (roles.includes(UserRole.TRAVEL_AGENT)) {
+        return ViewState.TRAVEL_AGENT_DASHBOARD;
+    }
+    if (roles.includes(UserRole.MANAGER)) {
+        return ViewState.MANAGER_DASHBOARD;
+    }
+    return ViewState.EMPLOYEE_DASHBOARD;
+  };
+
+  // Fetch real stats and data from backend
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchGlobalData = async () => {
+      if (currentView === ViewState.LOGIN) return;
+
       setLoading(true);
       try {
-        const [fetchedUsers, fetchedRequests] = await Promise.all([
-          api.getUsers(),
+        const [fetchedStats, fetchedRequests] = await Promise.all([
+          api.getStats().catch(() => null),
           api.getRequests()
         ]);
         
-        // If backend returns empty lists (first run), maybe fallback to defaults or seeding happens on backend
-        if (fetchedUsers.length === 0) {
-           setUsers(DEFAULT_USERS); // Just for display if DB is empty
-        } else {
-           setUsers(fetchedUsers);
-        }
-        
+        if (fetchedStats) setStats(fetchedStats);
         setRequests(fetchedRequests);
         setBackendError(false);
       } catch (err) {
         console.error("Backend connection failed:", err);
         setBackendError(true);
-        // Fallback to local defaults so app is usable
-        setUsers(DEFAULT_USERS);
-        setRequests(DEFAULT_REQUESTS);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-  }, []);
+    fetchGlobalData();
+  }, [currentView]);
 
+  // Restore Session
   useEffect(() => {
-  const savedUser = localStorage.getItem("user");
-  if (savedUser) {
-    const userObj = JSON.parse(savedUser);
-    setCurrentUser(userObj);
-
-    if (userObj.role === UserRole.ADMIN || userObj.role === UserRole.SUPER_ADMIN) {
-      setCurrentView(ViewState.ADMIN_DASHBOARD);
-    } else if (userObj.role === UserRole.MANAGER) {
-      setCurrentView(ViewState.MANAGER_DASHBOARD);
-    } else if (userObj.role === UserRole.TRAVEL_AGENT) {
-      setCurrentView(ViewState.TRAVEL_AGENT_DASHBOARD);
-    } else {
-      setCurrentView(ViewState.EMPLOYEE_DASHBOARD);
+    const savedUser = localStorage.getItem("user");
+    if (savedUser) {
+      try {
+        const userObj = JSON.parse(savedUser);
+        if (!Array.isArray(userObj.role)) {
+            userObj.role = [userObj.role];
+        }
+        
+        setCurrentUser(userObj);
+        setCurrentView(getInitialView(userObj.role));
+      } catch (e) {
+        console.error("Failed to parse saved user", e);
+        localStorage.removeItem("user");
+      }
     }
-  }
-}, []);
-
+  }, []);
 
   // -- ACTIONS --
 
@@ -166,7 +105,13 @@ const App: React.FC = () => {
 
     // Optimistic Update
     setRequests([requestWithUser, ...requests]);
-    setCurrentView(ViewState.EMPLOYEE_DASHBOARD);
+    
+    // Redirect based on role
+    const roles = currentUser?.role || [];
+    if (roles.includes(UserRole.SUPER_ADMIN)) setCurrentView(ViewState.SUPER_ADMIN_DASHBOARD);
+    else if (roles.includes(UserRole.ADMIN)) setCurrentView(ViewState.ADMIN_DASHBOARD);
+    else if (roles.includes(UserRole.MANAGER)) setCurrentView(ViewState.MANAGER_DASHBOARD);
+    else setCurrentView(ViewState.EMPLOYEE_DASHBOARD);
     
     addNotification({
       title: 'Request Submitted',
@@ -175,20 +120,17 @@ const App: React.FC = () => {
       type: 'success'
     });
 
-    if (!backendError) {
-      try {
-        const saved = await api.createRequest(requestWithUser);
-        // Replace optimistic ID with real DB ID if needed
-        setRequests(prev => prev.map(r => r.id === requestWithUser.id ? saved : r));
-      } catch (e) {
-        console.error("Failed to save request", e);
-        alert("Could not save to database. Check console.");
-      }
+    try {
+      const saved = await api.createRequest(requestWithUser);
+      setRequests(prev => prev.map(r => r.id === requestWithUser.id ? saved : r));
+      const newStats = await api.getStats();
+      setStats(newStats);
+    } catch (e) {
+      console.error("Failed to save request", e);
     }
   };
 
   const handleUpdateStatus = async (id: string, newStatus: RequestStatus, agentNotes?: string) => {
-    // Optimistic Update
     setRequests(requests.map(req => {
       if (req.id === id) {
         return { ...req, status: newStatus, agentNotes: agentNotes || req.agentNotes };
@@ -196,18 +138,13 @@ const App: React.FC = () => {
       return req;
     }));
     
+    // Status update logic (notifications)...
     let message = '';
     if (newStatus === 'Pending Admin') message = 'Request approved by Manager. Sent to Admin.';
-    if (newStatus === 'Processing (Agent)') {
-        // If coming from Action Required, it means Employee responded
-        if(requests.find(r => r.id === id)?.status === 'Action Required') {
-            message = 'Response sent to Travel Agent.';
-        } else {
-            message = 'Request approved by Admin. Sent to Travel Agent.';
-        }
-    }
-    if (newStatus === 'Action Required') message = 'Travel Agent has sent options for review.';
+    if (newStatus === 'Processing (Agent)') message = 'Request approved. Sent to Travel Desk.';
+    if (newStatus === 'Action Required') message = 'Travel Agent has sent options.';
     if (newStatus === 'Booked') message = 'Travel booking confirmed!';
+    if (newStatus === 'Rejected') message = 'Travel request was rejected.';
     
     if (message) {
       addNotification({
@@ -218,12 +155,12 @@ const App: React.FC = () => {
       });
     }
 
-    if (!backendError) {
-      try {
-        await api.updateRequestStatus(id, newStatus, agentNotes);
-      } catch (e) {
-        console.error("Failed to update status", e);
-      }
+    try {
+      await api.updateRequestStatus(id, newStatus, agentNotes);
+      const newStats = await api.getStats();
+      setStats(newStats);
+    } catch (e) {
+      console.error("Failed to update status", e);
     }
   };
 
@@ -236,65 +173,24 @@ const App: React.FC = () => {
       type: 'info'
     });
 
-    if (!backendError) {
-      try {
-        await api.deleteRequest(id);
-      } catch (e) {
+    try {
+      await api.deleteRequest(id);
+      const newStats = await api.getStats();
+      setStats(newStats);
+    } catch (e) {
          console.error("Failed to delete", e);
-      }
     }
   };
 
-  // User Management Actions
-  const handleUpdateUser = async (updatedUser: User) => {
-    setUsers(users.map(u => u.id === updatedUser.id ? updatedUser : u));
-    addNotification({
-      title: 'User Updated',
-      message: `Profile for ${updatedUser.name} has been updated.`,
-      time: 'Just now',
-      type: 'success'
-    });
-
-    if (!backendError) {
-      try {
-        await api.updateUser(updatedUser.id, updatedUser);
-      } catch (e) {
-        console.error("Failed to update user", e);
-      }
-    }
+  const handleLogin = (user: User) => {
+    const userWithRoleArray = {
+        ...user,
+        role: Array.isArray(user.role) ? user.role : [user.role]
+    };
+    setCurrentUser(userWithRoleArray);
+    localStorage.setItem("user", JSON.stringify(userWithRoleArray));
+    setCurrentView(getInitialView(userWithRoleArray.role));
   };
-
-  const handleDeleteUser = async (userId: string) => {
-    setUsers(users.filter(u => u.id !== userId));
-    addNotification({
-      title: 'User Deleted',
-      message: 'User account has been permanently removed.',
-      time: 'Just now',
-      type: 'warning'
-    });
-
-    if (!backendError) {
-      try {
-        await api.deleteUser(userId);
-      } catch (e) {
-         console.error("Failed to delete user", e);
-      }
-    }
-  };
-
-const handleLogin = (user: User) => {
-  setCurrentUser(user);
-  localStorage.setItem("user", JSON.stringify(user));
-  if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
-    setCurrentView(ViewState.ADMIN_DASHBOARD);
-  } else if (user.role === UserRole.MANAGER) {
-    setCurrentView(ViewState.MANAGER_DASHBOARD);
-  } else if (user.role === UserRole.TRAVEL_AGENT) {
-    setCurrentView(ViewState.TRAVEL_AGENT_DASHBOARD);
-  } else {
-    setCurrentView(ViewState.EMPLOYEE_DASHBOARD);
-  }
-};
 
   const handleNavigate = (view: ViewState) => {
     setCurrentView(view);
@@ -302,12 +198,11 @@ const handleLogin = (user: User) => {
   };
 
   const handleLogout = () => {
-  localStorage.removeItem("user");
-  setCurrentUser(null);
-  setCurrentView(ViewState.LOGIN);
-  setNotifications([]);
-};
-
+    localStorage.removeItem("user");
+    setCurrentUser(null);
+    setCurrentView(ViewState.LOGIN);
+    setNotifications([]);
+  };
 
   const handleViewRequest = (id: string) => {
     setSelectedRequestId(id);
@@ -327,15 +222,17 @@ const handleLogin = (user: User) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
 
+  // --- RENDER ---
+
   if (currentView === ViewState.LOGIN) {
     return (
       <>
         {backendError && (
           <div className="fixed top-0 left-0 w-full bg-red-600 text-white text-xs text-center py-1 z-[100]">
-             Backend disconnected. Running in demo mode. (Start server on port 5000)
+              Backend disconnected. Check server logs.
           </div>
         )}
-        <LoginView onLogin={handleLogin} users={users} />
+        <LoginView onLogin={handleLogin} />
       </>
     );
   }
@@ -354,7 +251,7 @@ const handleLogin = (user: User) => {
         currentView={currentView} 
         onNavigate={handleNavigate} 
         onLogout={handleLogout}
-        userRole={currentUser?.role || UserRole.EMPLOYEE}
+        userRole={currentUser?.role || []} 
         currentUser={currentUser}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
@@ -362,7 +259,7 @@ const handleLogin = (user: User) => {
       
       <div className="flex-1 flex flex-col h-full overflow-hidden w-full">
         <TopBar 
-          userRole={currentUser?.role || UserRole.EMPLOYEE} 
+          userRole={currentUser?.role || []} 
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
           notifications={notifications}
           onMarkAsRead={markAsRead}
@@ -371,11 +268,11 @@ const handleLogin = (user: User) => {
         <main className="flex-1 overflow-y-auto p-4 md:p-8 w-full relative">
           {backendError && (
             <div className="absolute top-0 left-0 w-full bg-red-100 text-red-700 text-xs px-4 py-2 text-center border-b border-red-200">
-               Backend Disconnected: Changes will not be saved to database. Check your Node.js server.
+                Backend Disconnected: Changes will not be saved to database.
             </div>
           )}
           
-          {loading ? (
+          {loading && !requests.length ? (
              <div className="flex justify-center items-center h-full">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
              </div>
@@ -383,10 +280,10 @@ const handleLogin = (user: User) => {
             <>
               {currentView === ViewState.EMPLOYEE_DASHBOARD && (
                 <EmployeeDashboard 
-                onNavigate={handleNavigate}
-                requests={requests}
-                stats={stats}
-              />
+                  onNavigate={handleNavigate}
+                  requests={requests}
+                  stats={stats}
+                />
               )}
 
               {currentView === ViewState.SHARE_OPTIONS && (
@@ -396,7 +293,6 @@ const handleLogin = (user: User) => {
                   onUpdateStatus={handleUpdateStatus}
                   />           
               )}
-
               
               {currentView === ViewState.CREATE_REQUEST && (
                 <CreateRequest 
@@ -406,17 +302,15 @@ const handleLogin = (user: User) => {
                 />
               )}
               
-             {currentView === ViewState.MY_REQUESTS && (
-  <MyRequests 
-    requests={requests} 
-    onDelete={handleDeleteRequest}
-    onUpdateStatus={handleUpdateStatus}
-    onViewRequest={handleViewRequest}
-    onCreateRequest={() => setCurrentView(ViewState.CREATE_REQUEST)}
-  />
-)}
-
-
+              {currentView === ViewState.MY_REQUESTS && (
+                  <MyRequests 
+                    requests={requests} 
+                    onDelete={handleDeleteRequest}
+                    onUpdateStatus={handleUpdateStatus}
+                    onViewRequest={handleViewRequest}
+                    onCreateRequest={() => setCurrentView(ViewState.CREATE_REQUEST)}
+                  />
+                )}
               
               {(currentView === ViewState.MANAGER_DASHBOARD || currentView === ViewState.APPROVAL_LIST) && (
                 <ManagerDashboard 
@@ -429,9 +323,18 @@ const handleLogin = (user: User) => {
               
               {(currentView === ViewState.ADMIN_DASHBOARD || currentView === ViewState.ADMIN_REPORTS) && (
                 <AdminDashboard 
-                  userRole={currentUser?.role || UserRole.ADMIN}
+                  userRole={currentUser?.role || []}
                   requests={requests}
                   onUpdateStatus={handleUpdateStatus}
+                  onNavigate={handleNavigate}
+                />
+              )}
+
+              {/* ADDED: Super Admin Logic */}
+              {currentView === ViewState.SUPER_ADMIN_DASHBOARD && (
+                <SuperAdminDashboard 
+                  requests={requests}
+                  onNavigate={handleNavigate}
                 />
               )}
 
@@ -442,23 +345,21 @@ const handleLogin = (user: User) => {
                 />
               )}
 
-              {currentView === ViewState.USER_MANAGEMENT && currentUser?.role === UserRole.SUPER_ADMIN && (
-               <UserManagement 
-                users={users}
-                 onUpdateUser={handleUpdateUser}
-                 onDeleteUser={handleDeleteUser}
-                 />
-                  )}
-
+              {currentView === ViewState.USER_MANAGEMENT && currentUser?.role.includes(UserRole.SUPER_ADMIN) && (
+                <UserManagement /> 
+              )}
                   
               {currentView === ViewState.REQUEST_DETAILS && (
                 <RequestDetails 
                   requestId={selectedRequestId} 
-                  onBack={() => handleNavigate(
-                    currentUser?.role === UserRole.MANAGER ? ViewState.MANAGER_DASHBOARD : 
-                    currentUser?.role === UserRole.TRAVEL_AGENT ? ViewState.TRAVEL_AGENT_DASHBOARD :
-                    ViewState.ADMIN_DASHBOARD
-                  )} 
+                  onBack={() => {
+                      const roles = currentUser?.role || [];
+                      if(roles.includes(UserRole.SUPER_ADMIN)) return handleNavigate(ViewState.SUPER_ADMIN_DASHBOARD);
+                      if(roles.includes(UserRole.ADMIN)) return handleNavigate(ViewState.ADMIN_DASHBOARD);
+                      if(roles.includes(UserRole.TRAVEL_AGENT)) return handleNavigate(ViewState.TRAVEL_AGENT_DASHBOARD);
+                      if(roles.includes(UserRole.MANAGER)) return handleNavigate(ViewState.MANAGER_DASHBOARD);
+                      return handleNavigate(ViewState.EMPLOYEE_DASHBOARD);
+                  }} 
                 />
               )}
             </>

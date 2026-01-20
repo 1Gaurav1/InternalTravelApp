@@ -16,12 +16,13 @@ import {
   Navigation,
   Info,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  Loader2 // Added loader icon
 } from 'lucide-react';
 
 interface CreateRequestProps {
   onNavigate: (view: ViewState) => void;
-  onCreate: (req: TravelRequest) => void;
+  onCreate: (req: TravelRequest) => Promise<void>; // Updated to support async
   currentUser?: User | null;
 }
 
@@ -37,11 +38,12 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
   // --- UI States ---
   const [tripType, setTripType] = useState<'oneway' | 'return' | 'multicity'>('return');
   const [cabRequired, setCabRequired] = useState(false);
-  const [fromLocation, setFromLocation] = useState(''); // Local state for "From"
+  const [fromLocation, setFromLocation] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false); // New Loading State
 
   // --- Standard Form Data ---
   const [formData, setFormData] = useState({
-    destination: '', // Maps to "To"
+    destination: '',
     startDate: '',
     endDate: '',
     startStartTime: '',
@@ -109,7 +111,9 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
   };
 
   // --- Submit Logic ---
-  const submit = () => {
+  const submit = async () => {
+    if (isSubmitting) return;
+
     let finalDestination = formData.destination;
     let finalStartDate = formData.startDate;
     let finalEndDate = formData.endDate;
@@ -187,8 +191,12 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
       notesBuilder += "\n[!] Cab Required for entire trip.";
     }
 
+    if (formData.purpose) {
+        notesBuilder += `\nPurpose: ${formData.purpose}`;
+    }
+
     const newRequest: TravelRequest = {
-      id: "",
+      // Backend will generate ID
       destination: finalDestination,
       startDate: finalStartDate,
       endDate: finalEndDate,
@@ -200,17 +208,21 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
       employeeAvatar: currentUser?.avatar,
       department: formData.department,
       type: formData.type as "Domestic" | "International",
-      submittedDate: new Date().toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
+      // IMPORTANT: Send ISO string for backend to parse correctly
+      submittedDate: new Date().toISOString(), 
       agentNotes: notesBuilder,
       preferredFlight: formData.preferredFlight,
     };
 
-    onCreate(newRequest);
-    toast.success("Travel request submitted");
+    try {
+        setIsSubmitting(true);
+        await onCreate(newRequest);
+        // toast.success handled in parent or here
+    } catch (error) {
+        toast.error("Failed to submit request");
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   return (
@@ -241,7 +253,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Create Request</h1>
-            <p className="text-gray-500 mt-2 text-lg">____________________________________________________________________________________</p>
+            <p className="text-gray-500 mt-2 text-lg">Plan your next business trip</p>
           </div>
           
           {/* Trip Type Toggle */}
@@ -315,7 +327,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                       </div>
                       <div>
                         <label className="text-xs font-bold text-gray-400 uppercase mb-2 block tracking-wider">To</label>
-                         <div className="relative group/input">
+                          <div className="relative group/input">
                            <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within/input:text-primary-500 transition-colors" size={18} />
                            <input
                             type="text"
@@ -543,11 +555,11 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                   onChange={(e) => setCabRequired(e.target.checked)}
                 />
                 <div className="flex-1">
-                   <div className="flex items-center gap-2 font-bold text-gray-900">
+                    <div className="flex items-center gap-2 font-bold text-gray-900">
                       <Car size={18} className={cabRequired ? 'text-primary-600' : 'text-gray-400'} /> 
                       Cab Required
-                   </div>
-                   <p className="text-sm text-gray-500 mt-0.5">Include if you require a full day cab service</p>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-0.5">Include if you require a full day cab service</p>
                 </div>
               </label>
 
@@ -674,11 +686,13 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
              <div className="mt-8 space-y-4">
                 <button
                   onClick={submit}
-                  className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-xl shadow-primary-200 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300"
+                  disabled={isSubmitting}
+                  className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-xl shadow-primary-200 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  Submit Request <ArrowRight size={20} />
+                  {isSubmitting ? <Loader2 size={20} className="animate-spin"/> : <>Submit Request <ArrowRight size={20} /></>}
                 </button>
                 <button
+                  onClick={() => toast.success("Draft saved (Locally)")}
                   className="w-full bg-white hover:bg-gray-50 text-gray-600 font-bold py-4 rounded-2xl flex items-center justify-center gap-3 border border-gray-100 shadow-sm transition-all duration-200"
                 >
                   Save Draft <Save size={18} />

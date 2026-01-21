@@ -28,7 +28,6 @@ interface CreateRequestProps {
   currentUser?: User | null;
 }
 
-// Updated Interface to include Hotel
 interface TripSegment {
   from: string;
   to: string;
@@ -42,6 +41,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
   // --- UI States ---
   const [tripType, setTripType] = useState<'oneway' | 'return' | 'multicity'>('return');
   const [cabRequired, setCabRequired] = useState(false);
+  const [stayRequired, setStayRequired] = useState(false); // <--- NEW STATE
   const [fromLocation, setFromLocation] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -83,7 +83,6 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
         try {
             const parsed = JSON.parse(savedDraft);
             setFormData(parsed.formData);
-            // Ensure hotelRequired exists for old drafts
             const patchedSegments = parsed.segments.map((s: any) => ({
                 ...s,
                 hotelRequired: s.hotelRequired || false
@@ -92,6 +91,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
             setTripType(parsed.tripType);
             setFromLocation(parsed.fromLocation);
             setCabRequired(parsed.cabRequired);
+            setStayRequired(parsed.stayRequired || false); // <--- LOAD NEW STATE
             toast.success("Draft restored from last session");
         } catch (e) {
             console.error("Failed to load draft", e);
@@ -105,7 +105,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
         segments,
         tripType,
         fromLocation,
-        cabRequired
+        cabRequired,
+        stayRequired // <--- SAVE NEW STATE
     };
     localStorage.setItem('travel_request_draft', JSON.stringify(draftData));
     toast.success("Draft saved successfully!");
@@ -145,14 +146,12 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
   };
 
   // --- Multi City Logic ---
-
-  // 1. Add Segment with Autofill
   const addSegment = () => {
     const previousDestination = segments[segments.length - 1].to;
     setSegments([
         ...segments, 
         { 
-            from: previousDestination, // Autofill Logic
+            from: previousDestination,
             to: '', 
             date: '', 
             preferredStartTime: '', 
@@ -169,13 +168,11 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
     setSegments(newSegments);
   };
 
-  // 2. Update Segment with Live Autofill
   const updateSegment = (index: number, field: keyof TripSegment, value: any) => {
     const newSegments = [...segments];
     // @ts-ignore
     newSegments[index][field] = value;
 
-    // Live Autofill: If I change the 'To' of Segment 1, update 'From' of Segment 2
     if (field === 'to' && index < newSegments.length - 1) {
         const nextSegment = newSegments[index + 1];
         if (nextSegment.from === '' || nextSegment.from === segments[index].to) {
@@ -270,6 +267,11 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
         multiCityDetails += `${idx + 1}. ${seg.from} -> ${seg.to} | ${seg.date} | ${seg.preferredStartTime || 'Any'} - ${seg.preferredEndTime || 'Any'}${hotelNote}\n`;
       });
       notesBuilder += multiCityDetails;
+    }
+
+    // Common Extras (OneWay/Return Only)
+    if (tripType !== 'multicity' && stayRequired) {
+        notesBuilder += "\n[!] Hotel/Stay Required at destination.";
     }
 
     if (cabRequired) {
@@ -561,7 +563,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                             <div className="flex-1">
                                 <div className="flex items-center gap-2 font-bold text-gray-900 text-sm">
                                   <BedDouble size={18} className={seg.hotelRequired ? 'text-indigo-600' : 'text-gray-400'} /> 
-                                  Stay Required
+                                  Hotel Required
                                 </div>
                                 <p className="text-xs text-gray-500 mt-0.5">Need accommodation in {seg.to || 'this city'}?</p>
                             </div>
@@ -735,6 +737,30 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
 
             {/* Common Extras */}
             <div className="pt-4 border-t border-gray-100">
+               {/* STAY REQUIRED CHECKBOX (OneWay/Return) */}
+               {tripType !== 'multicity' && (
+                   <label 
+                    className={`flex items-center gap-4 p-5 rounded-2xl border transition-all cursor-pointer mb-4 ${stayRequired ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-gray-100 hover:bg-gray-50'}`}
+                  >
+                    <div className={`w-6 h-6 rounded border flex items-center justify-center transition-colors ${stayRequired ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-gray-300'}`}>
+                      {stayRequired && <div className="w-2.5 h-2.5 bg-white rounded-sm" />}
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      className="hidden"
+                      checked={stayRequired}
+                      onChange={(e) => setStayRequired(e.target.checked)}
+                    />
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 font-bold text-gray-900">
+                          <BedDouble size={18} className={stayRequired ? 'text-indigo-600' : 'text-gray-400'} /> 
+                          Stay Required
+                        </div>
+                        <p className="text-sm text-gray-500 mt-0.5">Need a hotel at the destination?</p>
+                    </div>
+                  </label>
+               )}
+
                <label 
                 className={`flex items-center gap-4 p-5 rounded-2xl border transition-all cursor-pointer mb-6 ${cabRequired ? 'bg-primary-50 border-primary-200 shadow-sm' : 'bg-white border-gray-100 hover:bg-gray-50'}`}
               >
@@ -863,12 +889,13 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                 )}
 
                 {/* 4. Add-ons */}
-                {cabRequired && (
+                {(cabRequired || stayRequired) && (
                    <div className="flex items-start gap-3 animate-fade-in pt-4 border-t border-gray-50">
                      <div className="mt-0.5 bg-green-50 p-1.5 rounded-lg"><CheckCircle2 size={16} className="text-green-600"/></div>
                       <div>
                         <p className="text-xs text-gray-400 uppercase font-bold tracking-wider">Add-ons</p>
-                        <p className="text-gray-900 font-semibold text-sm">Cab Requested</p>
+                        {cabRequired && <p className="text-gray-900 font-semibold text-sm">Cab Requested</p>}
+                        {stayRequired && <p className="text-gray-900 font-semibold text-sm">Hotel Requested</p>}
                       </div>
                    </div>
                 )}

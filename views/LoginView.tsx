@@ -61,9 +61,11 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
       <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl w-full max-w-lg p-8 md:p-12 relative z-10 border border-white/50">
         
         <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-primary-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 text-white shadow-lg shadow-primary-500/30 transform -rotate-3 hover:rotate-0 transition-transform duration-300">
-            <Plane size={36} strokeWidth={2.5} />
-          </div>
+         <img
+          src="/travel.png"
+          alt="Renee Travel"
+          className="w-20 h-20 mx-auto mb-6 rounded-3xl shadow-lg shadow-primary-500/30 transform -rotate-3 hover:rotate-0 transition-transform duration-300 object-cover"
+        />
           <h1 className="text-3xl font-bold text-gray-900 mb-2 tracking-tight">Renee Travel</h1>
           <p className="text-gray-500 text-lg">Corporate Travel Website</p>
         </div>

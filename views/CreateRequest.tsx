@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import toast from "react-hot-toast";
 import { ViewState, TravelRequest, User } from '../types';
 import { 
@@ -17,21 +17,25 @@ import {
   Info,
   Clock,
   CheckCircle2,
-  Loader2 // Added loader icon
+  Loader2,
+  RotateCcw,
+  BedDouble
 } from 'lucide-react';
 
 interface CreateRequestProps {
   onNavigate: (view: ViewState) => void;
-  onCreate: (req: TravelRequest) => Promise<void>; // Updated to support async
+  onCreate: (req: TravelRequest) => Promise<void>;
   currentUser?: User | null;
 }
 
+// Updated Interface to include Hotel
 interface TripSegment {
   from: string;
   to: string;
   date: string;
   preferredStartTime: string;
   preferredEndTime: string;
+  hotelRequired: boolean;
 }
 
 const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, currentUser }) => {
@@ -39,7 +43,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
   const [tripType, setTripType] = useState<'oneway' | 'return' | 'multicity'>('return');
   const [cabRequired, setCabRequired] = useState(false);
   const [fromLocation, setFromLocation] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false); // New Loading State
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- Standard Form Data ---
   const [formData, setFormData] = useState({
@@ -59,8 +63,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
 
   // --- Multi-City Data ---
   const [segments, setSegments] = useState<TripSegment[]>([
-    { from: '', to: '', date: '', preferredStartTime: '', preferredEndTime: '' },
-    { from: '', to: '', date: '', preferredStartTime: '', preferredEndTime: '' }
+    { from: '', to: '', date: '', preferredStartTime: '', preferredEndTime: '', hotelRequired: false },
+    { from: '', to: '', date: '', preferredStartTime: '', preferredEndTime: '', hotelRequired: false }
   ]);
 
   const now = new Date().toISOString().split('T')[0];
@@ -71,6 +75,48 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
     '02:00 PM','03:00 PM','04:00 PM','05:00 PM','06:00 PM','07:00 PM','08:00 PM',
     '09:00 PM','10:00 PM','11:00 PM'
   ];
+
+  // --- DRAFT LOGIC ---
+  useEffect(() => {
+    const savedDraft = localStorage.getItem('travel_request_draft');
+    if (savedDraft) {
+        try {
+            const parsed = JSON.parse(savedDraft);
+            setFormData(parsed.formData);
+            // Ensure hotelRequired exists for old drafts
+            const patchedSegments = parsed.segments.map((s: any) => ({
+                ...s,
+                hotelRequired: s.hotelRequired || false
+            }));
+            setSegments(patchedSegments);
+            setTripType(parsed.tripType);
+            setFromLocation(parsed.fromLocation);
+            setCabRequired(parsed.cabRequired);
+            toast.success("Draft restored from last session");
+        } catch (e) {
+            console.error("Failed to load draft", e);
+        }
+    }
+  }, []);
+
+  const saveDraft = () => {
+    const draftData = {
+        formData,
+        segments,
+        tripType,
+        fromLocation,
+        cabRequired
+    };
+    localStorage.setItem('travel_request_draft', JSON.stringify(draftData));
+    toast.success("Draft saved successfully!");
+  };
+
+  const clearDraft = () => {
+    if(window.confirm("Are you sure you want to clear the form?")) {
+        localStorage.removeItem('travel_request_draft');
+        window.location.reload(); 
+    }
+  }
 
   // --- Helpers ---
   const convertTo24 = (t: string) => {
@@ -92,9 +138,28 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
     return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const getFilteredTimeSlots = (compareTime: string, isSameDay: boolean) => {
+    if (!isSameDay || !compareTime) return timeSlots;
+    const compare24 = convertTo24(compareTime);
+    return timeSlots.filter(slot => convertTo24(slot) > compare24);
+  };
+
   // --- Multi City Logic ---
+
+  // 1. Add Segment with Autofill
   const addSegment = () => {
-    setSegments([...segments, { from: '', to: '', date: '', preferredStartTime: '', preferredEndTime: '' }]);
+    const previousDestination = segments[segments.length - 1].to;
+    setSegments([
+        ...segments, 
+        { 
+            from: previousDestination, // Autofill Logic
+            to: '', 
+            date: '', 
+            preferredStartTime: '', 
+            preferredEndTime: '', 
+            hotelRequired: false 
+        }
+    ]);
   };
 
   const removeSegment = (index: number) => {
@@ -104,9 +169,20 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
     setSegments(newSegments);
   };
 
-  const updateSegment = (index: number, field: keyof TripSegment, value: string) => {
+  // 2. Update Segment with Live Autofill
+  const updateSegment = (index: number, field: keyof TripSegment, value: any) => {
     const newSegments = [...segments];
+    // @ts-ignore
     newSegments[index][field] = value;
+
+    // Live Autofill: If I change the 'To' of Segment 1, update 'From' of Segment 2
+    if (field === 'to' && index < newSegments.length - 1) {
+        const nextSegment = newSegments[index + 1];
+        if (nextSegment.from === '' || nextSegment.from === segments[index].to) {
+            nextSegment.from = value;
+        }
+    }
+
     setSegments(newSegments);
   };
 
@@ -149,6 +225,14 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
       if (!compare(formData.endDate, formData.endStartTime, formData.endDate, formData.endEndTime)) {
         toast.error("Invalid return time range"); return;
       }
+      if (formData.startDate === formData.endDate) {
+         if (formData.startStartTime && formData.endStartTime) {
+             if (convertTo24(formData.endStartTime) <= convertTo24(formData.startStartTime)) {
+                 toast.error("For same-day travel, Return time cannot be before Start time.");
+                 return;
+             }
+         }
+      }
       if (!compare(formData.startDate, formData.startEndTime, formData.endDate, formData.endStartTime)) {
         toast.error("End date cannot be earlier than start date"); return;
       }
@@ -182,7 +266,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
 
       let multiCityDetails = "\nMulti City Itinerary:\n";
       segments.forEach((seg, idx) => {
-        multiCityDetails += `${idx + 1}. ${seg.from} -> ${seg.to} | ${seg.date} | ${seg.preferredStartTime || 'Any'} - ${seg.preferredEndTime || 'Any'}\n`;
+        const hotelNote = seg.hotelRequired ? " [Hotel Required]" : "";
+        multiCityDetails += `${idx + 1}. ${seg.from} -> ${seg.to} | ${seg.date} | ${seg.preferredStartTime || 'Any'} - ${seg.preferredEndTime || 'Any'}${hotelNote}\n`;
       });
       notesBuilder += multiCityDetails;
     }
@@ -208,7 +293,6 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
       employeeAvatar: currentUser?.avatar,
       department: formData.department,
       type: formData.type as "Domestic" | "International",
-      // IMPORTANT: Send ISO string for backend to parse correctly
       submittedDate: new Date().toISOString(), 
       agentNotes: notesBuilder,
       preferredFlight: formData.preferredFlight,
@@ -217,7 +301,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
     try {
         setIsSubmitting(true);
         await onCreate(newRequest);
-        // toast.success handled in parent or here
+        localStorage.removeItem('travel_request_draft');
     } catch (error) {
         toast.error("Failed to submit request");
     } finally {
@@ -228,17 +312,95 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
   return (
     <div className="max-w-6xl mx-auto animate-fade-in pb-20">
       <datalist id="indian-cities">
-        <option value="Bengaluru, Karnataka" />
-        <option value="Delhi, Delhi" />
-        <option value="Mumbai, Maharashtra" />
-        <option value="Hyderabad, Telangana" />
-        <option value="Chennai, Tamil Nadu" />
-        <option value="Pune, Maharashtra" />
-        <option value="Kolkata, West Bengal" />
+        <option value="Agra, Uttar Pradesh" />
         <option value="Ahmedabad, Gujarat" />
-        <option value="Jaipur, Rajasthan" />
+        <option value="Aizawl, Mizoram" />
+        <option value="Ajmer, Rajasthan" />
+        <option value="Aligarh, Uttar Pradesh" />
+        <option value="Allahabad (Prayagraj), Uttar Pradesh" />
+        <option value="Ambala, Haryana" />
+        <option value="Amritsar, Punjab" />
+        <option value="Aurangabad, Maharashtra" />
+        <option value="Bareilly, Uttar Pradesh" />
+        <option value="Belagavi, Karnataka" />
+        <option value="Bengaluru, Karnataka" />
+        <option value="Bhavnagar, Gujarat" />
+        <option value="Bhilai, Chhattisgarh" />
+        <option value="Bhopal, Madhya Pradesh" />
+        <option value="Bhubaneswar, Odisha" />
+        <option value="Bikaner, Rajasthan" />
+        <option value="Chandigarh" />
+        <option value="Chennai, Tamil Nadu" />
+        <option value="Coimbatore, Tamil Nadu" />
+        <option value="Cuttack, Odisha" />
+        <option value="Dehradun, Uttarakhand" />
+        <option value="Delhi, Delhi" />
+        <option value="Dhanbad, Jharkhand" />
+        <option value="Durgapur, West Bengal" />
+        <option value="Faridabad, Haryana" />
+        <option value="Gandhinagar, Gujarat" />
+        <option value="Gangtok, Sikkim" />
+        <option value="Ghaziabad, Uttar Pradesh" />
+        <option value="Goa (Panaji)" />
+        <option value="Gorakhpur, Uttar Pradesh" />
         <option value="Gurugram, Haryana" />
+        <option value="Guwahati, Assam" />
+        <option value="Gwalior, Madhya Pradesh" />
+        <option value="Hubballi-Dharwad, Karnataka" />
+        <option value="Hyderabad, Telangana" />
+        <option value="Imphal, Manipur" />
+        <option value="Indore, Madhya Pradesh" />
+        <option value="Itanagar, Arunachal Pradesh" />
+        <option value="Jabalpur, Madhya Pradesh" />
+        <option value="Jaipur, Rajasthan" />
+        <option value="Jalandhar, Punjab" />
+        <option value="Jammu, Jammu & Kashmir" />
+        <option value="Jamnagar, Gujarat" />
+        <option value="Jamshedpur, Jharkhand" />
+        <option value="Jodhpur, Rajasthan" />
+        <option value="Kanpur, Uttar Pradesh" />
+        <option value="Kochi, Kerala" />
+        <option value="Kohima, Nagaland" />
+        <option value="Kolhapur, Maharashtra" />
+        <option value="Kolkata, West Bengal" />
+        <option value="Kota, Rajasthan" />
+        <option value="Kozhikode, Kerala" />
+        <option value="Lucknow, Uttar Pradesh" />
+        <option value="Ludhiana, Punjab" />
+        <option value="Madurai, Tamil Nadu" />
+        <option value="Mangaluru, Karnataka" />
+        <option value="Meerut, Uttar Pradesh" />
+        <option value="Mumbai, Maharashtra" />
+        <option value="Mysuru, Karnataka" />
+        <option value="Nagpur, Maharashtra" />
+        <option value="Nashik, Maharashtra" />
+        <option value="Navi Mumbai, Maharashtra" />
         <option value="Noida, Uttar Pradesh" />
+        <option value="Patna, Bihar" />
+        <option value="Pondicherry" />
+        <option value="Port Blair, Andaman" />
+        <option value="Pune, Maharashtra" />
+        <option value="Raipur, Chhattisgarh" />
+        <option value="Rajkot, Gujarat" />
+        <option value="Ranchi, Jharkhand" />
+        <option value="Rourkela, Odisha" />
+        <option value="Salem, Tamil Nadu" />
+        <option value="Shillong, Meghalaya" />
+        <option value="Shimla, Himachal Pradesh" />
+        <option value="Siliguri, West Bengal" />
+        <option value="Solapur, Maharashtra" />
+        <option value="Srinagar, Jammu & Kashmir" />
+        <option value="Surat, Gujarat" />
+        <option value="Thiruvananthapuram, Kerala" />
+        <option value="Tiruchirappalli, Tamil Nadu" />
+        <option value="Tirupati, Andhra Pradesh" />
+        <option value="Udaipur, Rajasthan" />
+        <option value="Ujjain, Madhya Pradesh" />
+        <option value="Vadodara, Gujarat" />
+        <option value="Varanasi, Uttar Pradesh" />
+        <option value="Vijayawada, Andhra Pradesh" />
+        <option value="Visakhapatnam, Andhra Pradesh" />
+        <option value="Warangal, Telangana" />
       </datalist>
 
       {/* Header */}
@@ -341,7 +503,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
                       <div>
                         <label className="text-xs font-bold text-gray-400 uppercase mb-2 block tracking-wider">Date</label>
                         <input
@@ -381,6 +543,31 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                         </div>
                       </div>
                     </div>
+
+                    {/* HOTEL CHECKBOX FOR SEGMENT */}
+                    <div className="pt-4 border-t border-gray-200/60">
+                         <label 
+                            className={`flex items-center gap-4 p-3.5 rounded-xl border transition-all cursor-pointer ${seg.hotelRequired ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-gray-100 hover:bg-gray-50'}`}
+                          >
+                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${seg.hotelRequired ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-gray-300'}`}>
+                              {seg.hotelRequired && <div className="w-2 h-2 bg-white rounded-sm" />}
+                            </div>
+                            <input 
+                              type="checkbox" 
+                              className="hidden"
+                              checked={seg.hotelRequired}
+                              onChange={(e) => updateSegment(idx, 'hotelRequired', e.target.checked)}
+                            />
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2 font-bold text-gray-900 text-sm">
+                                  <BedDouble size={18} className={seg.hotelRequired ? 'text-indigo-600' : 'text-gray-400'} /> 
+                                  Stay Required
+                                </div>
+                                <p className="text-xs text-gray-500 mt-0.5">Need accommodation in {seg.to || 'this city'}?</p>
+                            </div>
+                          </label>
+                    </div>
+
                   </div>
                 ))}
                 
@@ -509,13 +696,19 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                       <div className="md:col-span-4">
                         <label className="text-xs font-bold text-gray-400 uppercase mb-2 block tracking-wider">Pref. Start Time</label>
                         <div className="relative">
+                          {/* SMART FILTERING APPLIED HERE */}
                           <select
                             value={formData.endStartTime}
                             onChange={(e) => setFormData({...formData, endStartTime: e.target.value})}
                             className="w-full bg-gray-50 border-0 ring-1 ring-gray-200 rounded-xl pl-4 pr-10 py-3.5 appearance-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-gray-900 font-medium transition-all"
                           >
                             <option value="">Any Time</option>
-                            {timeSlots.map(t => <option key={t}>{t}</option>)}
+                            {getFilteredTimeSlots(
+                                formData.startStartTime, 
+                                formData.startDate === formData.endDate
+                            ).map(t => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
                           </select>
                           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
@@ -684,19 +877,27 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
 
              {/* Action Buttons */}
              <div className="mt-8 space-y-4">
-                <button
+                <button 
                   onClick={submit}
                   disabled={isSubmitting}
                   className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-xl shadow-primary-200 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? <Loader2 size={20} className="animate-spin"/> : <>Submit Request <ArrowRight size={20} /></>}
                 </button>
-                <button
-                  onClick={() => toast.success("Draft saved (Locally)")}
-                  className="w-full bg-white hover:bg-gray-50 text-gray-600 font-bold py-4 rounded-2xl flex items-center justify-center gap-3 border border-gray-100 shadow-sm transition-all duration-200"
-                >
-                  Save Draft <Save size={18} />
-                </button>
+                <div className="grid grid-cols-2 gap-3">
+                    <button 
+                      onClick={saveDraft}
+                      className="w-full bg-white hover:bg-gray-50 text-gray-600 font-bold py-3 rounded-2xl flex items-center justify-center gap-2 border border-gray-100 shadow-sm transition-all duration-200"
+                    >
+                      Save Draft <Save size={16} />
+                    </button>
+                    <button 
+                      onClick={clearDraft}
+                      className="w-full bg-white hover:bg-red-50 text-red-400 hover:text-red-500 font-bold py-3 rounded-2xl flex items-center justify-center gap-2 border border-gray-100 shadow-sm transition-all duration-200"
+                    >
+                      Clear <RotateCcw size={16} />
+                    </button>
+                </div>
              </div>
           </div>
 

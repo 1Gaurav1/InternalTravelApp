@@ -1,23 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Bell, Menu, ChevronDown } from 'lucide-react';
-import { Notification, ViewState } from '../types'; // Removed UserRole import as we use string[]
+import { Bell, Menu, LogOut } from 'lucide-react';
+import { Notification, User } from '../types';
 
 interface TopBarProps {
-  userRole: string[]; // <--- CHANGED: Expecting an Array now
+  currentUser: User | null;
   onToggleSidebar: () => void;
   notifications: Notification[];
   onMarkAsRead: (id: string) => void;
-  onNavigate?: (view: ViewState) => void;
+  onLogout: () => void;
 }
 
-const TopBar: React.FC<TopBarProps> = ({ userRole, onToggleSidebar, notifications, onMarkAsRead, onNavigate }) => {
-  // Safe array conversion in case old data comes through
-  const roles = Array.isArray(userRole) ? userRole : [userRole];
-
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
+const TopBar: React.FC<TopBarProps> = ({ 
+  currentUser, 
+  onToggleSidebar, 
+  notifications, 
+  onMarkAsRead, 
+  onLogout 
+}) => {
   const [showNotifications, setShowNotifications] = useState(false);
-  
   const notifRef = useRef<HTMLDivElement>(null);
 
   // Close notifications when clicking outside
@@ -33,69 +33,27 @@ const TopBar: React.FC<TopBarProps> = ({ userRole, onToggleSidebar, notification
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  // Mock search suggestions
-  const allSuggestions = [
-    { label: 'Create New Request', view: ViewState.CREATE_REQUEST },
-    { label: 'My Past Trips', view: ViewState.MY_REQUESTS },
-    { label: 'London Office', type: 'destination' },
-    { label: 'Travel Policy 2026', type: 'policy' },
-    { label: 'Approvals Pending', view: ViewState.APPROVAL_LIST },
-  ];
-
-  const suggestions = searchValue 
-    ? allSuggestions.filter(s => s.label.toLowerCase().includes(searchValue.toLowerCase()))
-    : [];
-
   return (
-    <header className="h-20 bg-white/80 backdrop-blur-md border-b border-gray-200/50 flex items-center justify-between px-4 md:px-8 sticky top-0 z-20">
-      <div className="flex items-center gap-4 flex-1">
+    <header className="h-20 bg-white border-b border-gray-100 flex items-center justify-between px-6 sticky top-0 z-20 shadow-sm">
+      
+      {/* LEFT: Mobile Menu & Welcome Message */}
+      <div className="flex items-center gap-4">
         <button 
           onClick={onToggleSidebar}
-          className="md:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+          className="md:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <Menu size={24} />
         </button>
-
-        <div className="relative max-w-xl w-full hidden md:block">
-          <div className={`relative group transition-all duration-300 ${isSearchFocused ? 'scale-105' : ''}`}>
-            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors ${isSearchFocused ? 'text-primary-500' : 'text-gray-400'}`} size={20} />
-            <input 
-              type="text" 
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
-              placeholder="Search destinations, requests, or policies..."
-              className="w-full bg-gray-100/50 border-none rounded-2xl py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary-100 focus:bg-white transition-all outline-none text-gray-700 placeholder-gray-400 shadow-sm"
-            />
-          </div>
-          
-          {/* Search Dropdown */}
-          {isSearchFocused && searchValue && suggestions.length > 0 && (
-            <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden py-2 animate-fade-in">
-              {suggestions.map((item, idx) => (
-                <button 
-                  key={idx}
-                  onClick={() => {
-                    if (item.view && onNavigate) onNavigate(item.view);
-                    setSearchValue('');
-                  }}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700 flex items-center justify-between group"
-                >
-                  <span>{item.label}</span>
-                  <span className="text-xs text-gray-400 group-hover:text-primary-500 capitalize">{item.view ? 'Page' : item.type}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
       
-      <div className="flex items-center gap-3 md:gap-5">
+      {/* RIGHT: Notifications & Logout */}
+      <div className="flex items-center gap-4">
+        
+        {/* Notification Bell */}
         <div className="relative" ref={notifRef}>
           <button 
             onClick={() => setShowNotifications(!showNotifications)}
-            className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all ${showNotifications ? 'bg-primary-50 text-primary-600' : 'bg-white hover:bg-gray-50 border border-gray-100 text-gray-500'}`}
+            className={`relative p-2.5 rounded-xl transition-all ${showNotifications ? 'bg-primary-50 text-primary-600' : 'bg-white hover:bg-gray-50 text-gray-500 border border-gray-200'}`}
           >
             <Bell size={20} />
             {unreadCount > 0 && (
@@ -105,48 +63,33 @@ const TopBar: React.FC<TopBarProps> = ({ userRole, onToggleSidebar, notification
 
           {/* Notifications Dropdown */}
           {showNotifications && (
-            <div className="absolute right-0 mt-3 w-80 md:w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-fade-in">
+            <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-scale-in origin-top-right">
               <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <h3 className="font-bold text-gray-900">Notifications</h3>
-                <span className="text-xs font-medium text-primary-600 bg-primary-50 px-2 py-1 rounded-full">{unreadCount} New</span>
+                <span className="text-xs font-bold text-white bg-red-500 px-2 py-0.5 rounded-full">{unreadCount} New</span>
               </div>
-              <div className="max-h-[400px] overflow-y-auto">
+              <div className="max-h-[350px] overflow-y-auto">
                 {notifications.length === 0 ? (
-                   <div className="p-8 text-center text-gray-500 text-sm">No new notifications</div>
+                   <div className="p-8 text-center text-gray-400 text-sm">No new notifications</div>
                 ) : (
                   notifications.map((notif) => (
                     <div 
                       key={notif.id} 
                       onClick={() => onMarkAsRead(notif.id)}
-                      className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer flex gap-3 ${notif.read ? 'opacity-60' : 'bg-blue-50/30'}`}
+                      className={`p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer flex gap-3 ${notif.read ? 'opacity-60' : 'bg-blue-50/30'}`}
                     >
-                        <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${notif.read ? 'bg-gray-300' : 'bg-primary-500'}`}></div>
+                        <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${notif.read ? 'bg-gray-300' : 'bg-primary-500'}`}></div>
                         <div>
-                          <p className={`text-sm ${notif.read ? 'text-gray-600' : 'text-gray-900 font-semibold'}`}>{notif.title}</p>
-                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{notif.message}</p>
-                          <p className="text-[10px] text-gray-400 mt-2">{notif.time}</p>
+                          <p className={`text-sm ${notif.read ? 'text-gray-600' : 'text-gray-900 font-bold'}`}>{notif.title}</p>
+                          <p className="text-xs text-gray-500 mt-1">{notif.message}</p>
+                          <p className="text-[10px] text-gray-400 mt-1.5">{notif.time}</p>
                         </div>
                     </div>
                   ))
                 )}
               </div>
-              <div className="p-2 border-t border-gray-100 text-center">
-                <button className="text-xs font-medium text-gray-500 hover:text-gray-900 py-2 w-full">Mark all as read</button>
-              </div>
             </div>
           )}
-        </div>
-        
-        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full cursor-pointer hover:shadow-sm transition-shadow">
-           <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-primary-500 to-purple-500 text-[10px] text-white flex items-center justify-center font-bold">
-              {/* FIXED: Get first letter of first role */}
-              {roles[0]?.charAt(0)}
-           </div>
-           {/* FIXED: Join roles with comma */}
-           <span className="text-xs font-medium text-gray-700 pr-1 capitalize">
-              {roles.map(r => r.toLowerCase().replace('_', ' ')).join(', ')}
-           </span>
-           <ChevronDown size={14} className="text-gray-400" />
         </div>
       </div>
     </header>

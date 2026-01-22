@@ -130,10 +130,23 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateStatus = async (id: string, newStatus: RequestStatus, agentNotes?: string) => {
+  const handleUpdateStatus = async (
+    id: string, 
+    newStatus: RequestStatus, 
+    agentNotes?: string, 
+    bookingDetails?: any, // New param
+    totalAmount?: number // New param
+) => {
     setRequests(requests.map(req => {
       if (req.id === id) {
-        return { ...req, status: newStatus, agentNotes: agentNotes || req.agentNotes };
+        return { 
+            ...req, 
+            status: newStatus, 
+            agentNotes: agentNotes || req.agentNotes,
+            // Save the new booking details
+            bookingDetails: bookingDetails || req.bookingDetails,
+            amount: totalAmount || req.amount 
+        };
       }
       return req;
     }));

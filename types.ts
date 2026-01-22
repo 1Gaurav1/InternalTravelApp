@@ -43,7 +43,7 @@ export interface TravelRequest {
   endDate: string;
   startTime?: string;
   endTime?: string;
-  status: RequestStatus; // Use RequestStatus here
+  status: RequestStatus; 
   amount: number;
   employeeName: string;
   employeeAvatar?: string;
@@ -53,9 +53,28 @@ export interface TravelRequest {
   purpose?: string;
   agentNotes?: string;
   preferredFlight?: string;
-  
+  agentOptions?: string[];
   flightOptions?: FlightOption[];
   selectedOptionId?: string;
+  bookingDetails?: CostBreakdown;
+}
+
+export interface CostBreakdown {
+  flightCosts: {
+    from: string;
+    to: string;
+    airlineCost: number;
+    agentFee: number;
+    ticketFile?: string; // Mock file name
+  }[];
+  hotelCosts: {
+    city: string;
+    hotelCost: number;
+    agentFee: number;
+  }[];
+  cabCost: number;
+  otherCost: number;
+  totalAmount: number;
 }
 
 export interface FlightOption {

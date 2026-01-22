@@ -1,5 +1,4 @@
-
-import { TravelRequest, User, RequestStatus } from './types';
+import { TravelRequest, User, RequestStatus, CostBreakdown } from './types';
 
 const API_URL = 'https://internaltravelapp.onrender.com/api';
 
@@ -18,15 +17,13 @@ export const api = {
     const res = await fetch(`${API_URL}/users`);
     return handleResponse(res);
   },
-async getStats() {
-  const res = await fetch(`${API_URL}/stats`);
-  return handleResponse(res);
-},
-// Add this inside the api = { ... } object in api.ts
+
+  async getStats() {
+    const res = await fetch(`${API_URL}/stats`);
+    return handleResponse(res);
+  },
 
   login: async (email: string, password: string): Promise<User> => {
-    // In the final backend step, we will create a specific '/login' route.
-    // For now, this uses your existing GET /users to find a match (Transition Step).
     const res = await fetch(`${API_URL}/users`);
     if (!res.ok) throw new Error('Failed to connect to server');
     
@@ -41,18 +38,17 @@ async getStats() {
   },
 
   signup: async (user: Partial<User>): Promise<User> => {
-     // This uses your existing POST /users route
      const res = await fetch(`${API_URL}/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            ...user,
-            id: crypto.randomUUID(), // Temp ID generation until backend handles it
-            role: 'EMPLOYEE', // Default role
-            status: 'Active',
-            lastActive: 'Just now',
-            avatar: `https://ui-avatars.com/api/?name=${user.name}&background=random`
-        }),
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({
+           ...user,
+           id: crypto.randomUUID(), 
+           role: 'EMPLOYEE',
+           status: 'Active',
+           lastActive: 'Just now',
+           avatar: `https://ui-avatars.com/api/?name=${user.name}&background=random`
+       }),
      });
      if (!res.ok) throw new Error('Failed to create account');
      return res.json();
@@ -88,15 +84,15 @@ async getStats() {
     const res = await fetch(`${API_URL}/requests`);
     return handleResponse(res);
   },
-  sendAgentOptions: async (id: string, options: string[]) => {
-  const res = await fetch(`${API_URL}/requests/${id}/options`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ options })
-  });
-  return res.json();
-},
 
+  sendAgentOptions: async (id: string, options: string[]) => {
+    const res = await fetch(`${API_URL}/requests/${id}/options`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ options })
+    });
+    return res.json();
+  },
 
   createRequest: async (request: TravelRequest): Promise<TravelRequest> => {
     const res = await fetch(`${API_URL}/requests`, {
@@ -107,11 +103,25 @@ async getStats() {
     return handleResponse(res);
   },
 
-  updateRequestStatus: async (id: string, status: RequestStatus, agentNotes?: string): Promise<TravelRequest> => {
+  // --- UPDATED FUNCTION ---
+  updateRequestStatus: async (
+    id: string, 
+    status: RequestStatus, 
+    agentNotes?: string, 
+    bookingDetails?: CostBreakdown, // New Param
+    amount?: number // New Param (Total Cost)
+  ): Promise<TravelRequest> => {
+    
+    // We send a merged object. The backend should handle partial updates.
+    const payload: any = { status, agentNotes };
+    
+    if (bookingDetails) payload.bookingDetails = bookingDetails;
+    if (amount) payload.amount = amount;
+
     const res = await fetch(`${API_URL}/requests/${id}/status`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, agentNotes }),
+      body: JSON.stringify(payload),
     });
     return handleResponse(res);
   },
@@ -119,9 +129,7 @@ async getStats() {
   deleteRequest: async (id: string): Promise<void> => {
     const res = await fetch(`${API_URL}/requests/${id}`, {
       method: 'DELETE',
-    });
+    }); 
     return handleResponse(res);
   },
 };
-
-

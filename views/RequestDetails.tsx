@@ -3,7 +3,8 @@ import { api } from '../api';
 import { TravelRequest, UserRole } from '../types';
 import { 
   ArrowLeft, Calendar, FileText, 
-  CheckCircle, XCircle, Send, Building
+  CheckCircle, XCircle, Send, Building,
+  MessageCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -17,7 +18,6 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
   const [loading, setLoading] = useState(true);
   const [userReply, setUserReply] = useState('');
   
-  // Get current user to check roles
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const isManager = currentUser.role?.includes(UserRole.MANAGER);
 
@@ -50,16 +50,36 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
     }
   };
 
+  // --- FIXED: ROBUST NOTE SAVING ---
   const handleEmployeeSelection = async () => {
     if (!request || !request.id || !userReply) return;
     try {
-      const updatedNotes = `[Agent Options]: ${request.agentNotes} \n\n[User Selection]: ${userReply}`;
+      // 1. Get the original options (remove any previous User Selections or tags to avoid duplicates)
+      let cleanOldNotes = request.agentNotes || '';
+      
+      // Remove the tag if it already existed to clean it up
+      cleanOldNotes = cleanOldNotes.replace('[Agent Options]:', '').split('[User Selection]:')[0].trim();
+
+      // 2. Create the formatted string exactly as the Dashboard expects it
+      const updatedNotes = `[Agent Options]:\n${cleanOldNotes}\n\n[User Selection]: ${userReply}`;
+
       await api.updateRequestStatus(request.id, 'Processing (Agent)', updatedNotes);
       toast.success("Selection sent to Travel Desk");
       onBack();
     } catch (e) {
       toast.error("Failed to send selection");
     }
+  };
+
+  const handleShare = () => {
+    if (!request) return;
+    const text = `*Travel Request Update*\n\n` +
+                 `📍 Destination: ${request.destination}\n` +
+                 `📅 Dates: ${new Date(request.startDate).toLocaleDateString()} - ${new Date(request.endDate).toLocaleDateString()}\n` +
+                 `📊 Status: ${request.status}\n` + 
+                 `\nCheck portal for full details.`;
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   };
 
   if (loading) return <div className="p-10 text-center">Loading details...</div>;
@@ -70,15 +90,25 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
 
   return (
     <div className="max-w-4xl mx-auto p-6 animate-fade-in pb-20">
-      {/* Navigation */}
-      <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 transition-colors font-medium">
-        <ArrowLeft size={20} /> Back to Dashboard
-      </button>
+      
+      <div className="flex items-center justify-between mb-6">
+        <button 
+            onClick={onBack} 
+            className="flex items-center gap-2 text-gray-500 hover:text-gray-900 transition-colors font-medium"
+        >
+            <ArrowLeft size={20} /> Back to Dashboard
+        </button>
 
-      {/* Main Card */}
+        <button
+            onClick={handleShare}
+            className="flex items-center gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white px-4 py-2 rounded-xl font-bold transition-all shadow-sm hover:shadow-md text-sm"
+        >
+            <MessageCircle size={18} /> Share Details
+        </button>
+      </div>
+
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
         
-        {/* Header Banner */}
         <div className={`p-8 ${isBooked ? 'bg-green-600' : 'bg-gray-900'} text-white`}>
           <div className="flex justify-between items-start">
             <div>
@@ -86,7 +116,6 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                 <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${isBooked ? 'bg-green-500/30' : 'bg-gray-700'}`}>
                   {request.status}
                 </span>
-                {/* REMOVED: {request.type} badge (Domestic/International) */}
               </div>
               <h1 className="text-3xl font-bold">Trip to {request.destination}</h1>
               <p className="text-white/70 mt-1 flex items-center gap-2">
@@ -102,10 +131,8 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
         <div className="p-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             
-            {/* Left: Trip Details */}
             <div className="md:col-span-2 space-y-8">
                 
-                {/* 1. Basic Info */}
                 <div className="grid grid-cols-2 gap-6">
                     <div>
                         <label className="text-xs font-bold text-gray-400 uppercase">Department</label>
@@ -121,14 +148,13 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                     </div>
                 </div>
 
-                {/* 2. AGENT OPTIONS INTERACTION (Visible if Action Required) */}
                 {isActionRequired && (
                     <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100 animate-scale-in">
                         <h3 className="text-lg font-bold text-amber-900 mb-4 flex items-center gap-2">
                             <FileText className="text-amber-600"/> Travel Options Available
                         </h3>
                         <div className="bg-white p-4 rounded-xl border border-amber-100 text-gray-700 text-sm whitespace-pre-line mb-6 font-mono leading-relaxed shadow-sm">
-                            {request.agentNotes || "No details provided."}
+                            {request.agentNotes ? request.agentNotes.replace('[Agent Options]:', '').trim() : "No details provided."}
                         </div>
                         
                         <div className="space-y-3">
@@ -150,7 +176,6 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                     </div>
                 )}
 
-                {/* 3. BOOKING CONFIRMATION (Visible if Booked) */}
                 {isBooked && (
                     <div className="bg-green-50 rounded-2xl p-6 border border-green-100 animate-scale-in">
                         <h3 className="text-lg font-bold text-green-900 mb-4 flex items-center gap-2">
@@ -162,22 +187,14 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                                 {request.agentNotes || "Booking details attached to email."}
                             </div>
                         </div>
-                        <div className="mt-4 flex gap-4">
-                            {/* <button className="text-green-700 text-sm font-bold hover:underline flex items-center gap-2">
-                                <FileText size={16}/> Download Details
-                            </button> */}
-                        </div>
                     </div>
                 )}
             </div>
 
-            {/* Right: Sidebar / Manager Actions */}
             <div className="space-y-6">
-                 {/* Status Timeline */}
                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
                     <h4 className="font-bold text-gray-900 mb-4 text-sm">Request Timeline</h4>
                     <div className="space-y-4 relative">
-                        {/* Line */}
                         <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-gray-200"></div>
 
                         <div className="relative pl-6">
@@ -204,7 +221,6 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                     </div>
                  </div>
 
-                {/* Manager Actions (Only visible if Manager + Pending Manager) */}
                 {isManager && request.status === 'Pending Manager' && (
                     <div className="space-y-3">
                         <button 

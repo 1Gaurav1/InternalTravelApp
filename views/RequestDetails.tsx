@@ -4,7 +4,7 @@ import { TravelRequest, UserRole } from '../types';
 import { 
   ArrowLeft, Calendar, FileText, 
   CheckCircle, XCircle, Send, Building,
-  MessageCircle
+  MessageCircle, MapPin, AlertCircle, Eye, Download, Clock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -42,6 +42,8 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
     if (!request || !request.id) return;
     try {
       const newStatus = status === 'Approved' ? 'Pending Admin' : 'Rejected';
+      // Note: Rejection Reason is handled by ConfirmationModal in ManagerDashboard
+      // This is just a fallback direct action if used elsewhere
       await api.updateRequestStatus(request.id, newStatus);
       toast.success(`Request ${status}`);
       onBack();
@@ -50,23 +52,23 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
     }
   };
 
-  // --- FIXED: ROBUST NOTE SAVING ---
   const handleEmployeeSelection = async () => {
     if (!request || !request.id || !userReply) return;
     try {
-      // 1. Get the original options (remove any previous User Selections or tags to avoid duplicates)
-      let cleanOldNotes = request.agentNotes || '';
+      const originalNotes = request.agentNotes || '';
+      // Remove old separator if exists to avoid duplication
+      const cleanNotes = originalNotes.replace(/USER SELECTION[\s\S]*$/, '').trim();
       
-      // Remove the tag if it already existed to clean it up
-      cleanOldNotes = cleanOldNotes.replace('[Agent Options]:', '').split('[User Selection]:')[0].trim();
-
-      // 2. Create the formatted string exactly as the Dashboard expects it
-      const updatedNotes = `[Agent Options]:\n${cleanOldNotes}\n\n[User Selection]: ${userReply}`;
+      const updatedNotes = `${cleanNotes}\n\n` + 
+                           `USER SELECTION ---------------\n` + 
+                           `${userReply}`;
 
       await api.updateRequestStatus(request.id, 'Processing (Agent)', updatedNotes);
+      
       toast.success("Selection sent to Travel Desk");
       onBack();
     } catch (e) {
+      console.error(e);
       toast.error("Failed to send selection");
     }
   };
@@ -87,10 +89,13 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
 
   const isActionRequired = request.status === 'Action Required';
   const isBooked = request.status === 'Booked';
+  const isRejected = request.status === 'Rejected';
+  const details = request.bookingDetails;
 
   return (
     <div className="max-w-4xl mx-auto p-6 animate-fade-in pb-20">
       
+      {/* HEADER ACTIONS */}
       <div className="flex items-center justify-between mb-6">
         <button 
             onClick={onBack} 
@@ -103,17 +108,18 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
             onClick={handleShare}
             className="flex items-center gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white px-4 py-2 rounded-xl font-bold transition-all shadow-sm hover:shadow-md text-sm"
         >
-            <MessageCircle size={18} /> Share Details
+            <MessageCircle size={18} /> Share
         </button>
       </div>
 
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
         
-        <div className={`p-8 ${isBooked ? 'bg-green-600' : 'bg-gray-900'} text-white`}>
+        {/* HERO HEADER */}
+        <div className={`p-8 ${isBooked ? 'bg-green-600' : isRejected ? 'bg-red-600' : 'bg-gray-900'} text-white transition-colors duration-500`}>
           <div className="flex justify-between items-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${isBooked ? 'bg-green-500/30' : 'bg-gray-700'}`}>
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-white/20 backdrop-blur-sm">
                   {request.status}
                 </span>
               </div>
@@ -129,11 +135,28 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
         </div>
 
         <div className="p-8">
+          
+          {/* 1. REJECTION ALERT */}
+          {isRejected && request.rejectionReason && (
+             <div className="mb-8 bg-red-50 border border-red-100 rounded-2xl p-5 flex items-start gap-4 animate-scale-in">
+                <div className="p-2 bg-red-100 rounded-full text-red-600">
+                    <XCircle size={24} />
+                </div>
+                <div>
+                    <h3 className="text-red-900 font-bold text-lg">Request Rejected</h3>
+                    <p className="text-red-700 mt-1 font-medium">Reason: "{request.rejectionReason}"</p>
+                    <p className="text-red-500 text-xs mt-2">Please contact your manager for clarification.</p>
+                </div>
+             </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             
+            {/* LEFT COLUMN: MAIN CONTENT */}
             <div className="md:col-span-2 space-y-8">
                 
-                <div className="grid grid-cols-2 gap-6">
+                {/* 2. BASIC INFO GRID */}
+                <div className="grid grid-cols-2 gap-6 bg-gray-50 p-5 rounded-2xl border border-gray-100">
                     <div>
                         <label className="text-xs font-bold text-gray-400 uppercase">Department</label>
                         <div className="flex items-center gap-2 mt-1 text-gray-900 font-medium">
@@ -141,20 +164,87 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                         </div>
                     </div>
                     <div>
-                        <label className="text-xs font-bold text-gray-400 uppercase">Estimated Budget</label>
+                        <label className="text-xs font-bold text-gray-400 uppercase">Trip Type</label>
                         <div className="flex items-center gap-2 mt-1 text-gray-900 font-medium">
-                           ₹{request.amount.toLocaleString()}
+                           <MapPin size={18} className="text-gray-400"/> {request.type}
                         </div>
                     </div>
                 </div>
 
+                {/* 3. FINAL BOOKING DETAILS (If Booked) */}
+                {isBooked && details && (
+                    <div className="space-y-6">
+                        <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                            <CheckCircle className="text-green-500"/> Booking Summary
+                        </h3>
+
+                        {/* Flights */}
+                        {details.flights && details.flights.map((flight, i) => (
+                            <div key={i} className="bg-white border border-gray-200 p-5 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-900">{flight.airline} <span className="text-gray-500 font-normal">({flight.flightNumber})</span></p>
+                                        <p className="text-xs text-gray-500">{new Date(flight.departureTime).toLocaleString()}</p>
+                                    </div>
+                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold">Flight</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-sm text-gray-700 mb-4">
+                                    <span className="font-medium">{flight.from}</span>
+                                    <span className="text-gray-300">➜</span>
+                                    <span className="font-medium">{flight.to}</span>
+                                </div>
+                                {flight.ticketFile && (
+                                    <button 
+                                        onClick={() => window.open(flight.ticketFile, '_blank')}
+                                        className="w-full py-2 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2"
+                                    >
+                                        <Download size={14}/> Download Ticket
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+
+                        {/* Hotels */}
+                        {details.hotels && details.hotels.map((hotel, i) => (
+                            <div key={i} className={`border p-5 rounded-2xl shadow-sm ${hotel.bookingStatus === 'Book Later' ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200'}`}>
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-900">{hotel.bookingStatus === 'Confirmed' ? hotel.hotelName : 'Booking Pending'}</p>
+                                        <p className="text-xs text-gray-500">{hotel.city}</p>
+                                    </div>
+                                    <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-bold">Hotel</span>
+                                </div>
+                                
+                                {hotel.bookingStatus === 'Book Later' ? (
+                                    <p className="text-sm text-orange-700 flex items-center gap-2 font-medium">
+                                        <Clock size={16}/> To be booked later upon request.
+                                    </p>
+                                ) : (
+                                    <>
+                                        <p className="text-xs text-gray-500 mb-4">Check-in: {hotel.checkIn}</p>
+                                        {hotel.bookingFile && (
+                                            <button 
+                                                onClick={() => window.open(hotel.bookingFile, '_blank')}
+                                                className="w-full py-2 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2"
+                                            >
+                                                <Download size={14}/> Download Voucher
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* 4. ACTION REQUIRED (Selection Mode) */}
                 {isActionRequired && (
                     <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100 animate-scale-in">
                         <h3 className="text-lg font-bold text-amber-900 mb-4 flex items-center gap-2">
-                            <FileText className="text-amber-600"/> Travel Options Available
+                            <FileText className="text-amber-600"/> Please Select an Option
                         </h3>
                         <div className="bg-white p-4 rounded-xl border border-amber-100 text-gray-700 text-sm whitespace-pre-line mb-6 font-mono leading-relaxed shadow-sm">
-                            {request.agentNotes ? request.agentNotes.replace('[Agent Options]:', '').trim() : "No details provided."}
+                            {request.agentNotes ? request.agentNotes.replace('USER SELECTION', '').trim() : "No details provided."}
                         </div>
                         
                         <div className="space-y-3">
@@ -163,7 +253,7 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                                 value={userReply}
                                 onChange={(e) => setUserReply(e.target.value)}
                                 placeholder="e.g. I select Option 2. Please proceed."
-                                className="w-full p-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none h-24 text-sm"
+                                className="w-full p-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-amber-500 outline-none h-24 text-sm"
                             ></textarea>
                             <button 
                                 onClick={handleEmployeeSelection}
@@ -175,28 +265,24 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                         </div>
                     </div>
                 )}
-
-                {isBooked && (
-                    <div className="bg-green-50 rounded-2xl p-6 border border-green-100 animate-scale-in">
-                        <h3 className="text-lg font-bold text-green-900 mb-4 flex items-center gap-2">
-                            <CheckCircle className="text-green-600"/> Booking Confirmed
-                        </h3>
-                        <div className="bg-white p-6 rounded-xl border border-green-100 shadow-sm">
-                            <p className="text-xs font-bold text-gray-400 uppercase mb-2">Booking / Ticket Details</p>
-                            <div className="text-gray-800 font-mono text-sm whitespace-pre-line leading-relaxed">
-                                {request.agentNotes || "Booking details attached to email."}
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
 
+            {/* RIGHT COLUMN: TIMELINE & ACTIONS */}
             <div className="space-y-6">
+                 {/* Total Cost Display (Only if booked) */}
+                 {isBooked && (
+                     <div className="bg-green-50 p-6 rounded-2xl border border-green-100 text-center">
+                        <p className="text-xs font-bold text-green-600 uppercase mb-1">Total Trip Cost</p>
+                        <p className="text-3xl font-black text-green-900">₹{request.amount.toLocaleString()}</p>
+                     </div>
+                 )}
+
                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
                     <h4 className="font-bold text-gray-900 mb-4 text-sm">Request Timeline</h4>
                     <div className="space-y-4 relative">
                         <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-gray-200"></div>
 
+                        {/* Steps */}
                         <div className="relative pl-6">
                             <div className="absolute left-0 top-1.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white"></div>
                             <p className="text-xs font-bold text-gray-900">Submitted</p>
@@ -204,9 +290,8 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                         </div>
                         
                         <div className="relative pl-6">
-                            <div className={`absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white ${request.status === 'Pending Manager' ? 'bg-amber-400 animate-pulse' : 'bg-green-500'}`}></div>
+                            <div className={`absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white ${request.status === 'Pending Manager' ? 'bg-amber-400 animate-pulse' : request.status === 'Rejected' ? 'bg-red-500' : 'bg-green-500'}`}></div>
                             <p className="text-xs font-bold text-gray-900">Manager Approval</p>
-                            <p className="text-[10px] text-gray-500">{request.status === 'Pending Manager' ? 'Waiting...' : 'Completed'}</p>
                         </div>
 
                         <div className="relative pl-6">
@@ -221,6 +306,7 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                     </div>
                  </div>
 
+                {/* Manager Quick Actions (Fallback) */}
                 {isManager && request.status === 'Pending Manager' && (
                     <div className="space-y-3">
                         <button 
@@ -228,12 +314,6 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ requestId, onBack }) =>
                             className="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-500/20 transition-all flex items-center justify-center gap-2"
                         >
                             <CheckCircle size={18}/> Approve Request
-                        </button>
-                        <button 
-                            onClick={() => handleManagerAction('Rejected')}
-                            className="w-full py-3 bg-white border border-red-200 text-red-600 font-bold rounded-xl hover:bg-red-50 transition-all flex items-center justify-center gap-2"
-                        >
-                            <XCircle size={18}/> Reject Request
                         </button>
                     </div>
                 )}

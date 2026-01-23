@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { TravelRequest, RequestStatus, CostBreakdown } from '../types';
-import { Plane, Calendar, MapPin, CheckCircle, Clock, Send, MessageCircle, User, MessageSquare } from 'lucide-react';
-import ConfirmationModal from '../components/ConfirmationModal';
+import { 
+  Plane, Calendar, MapPin, CheckCircle, Clock, Send, 
+  MessageCircle, MessageSquare, Eye, FileText, X 
+} from 'lucide-react';
 import BookingCompletionForm from '../components/BookingCompletionForm';
 
 interface TravelAgentDashboardProps {
@@ -12,75 +14,84 @@ interface TravelAgentDashboardProps {
 const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, onUpdateStatus }) => {
   const [selectedRequest, setSelectedRequest] = useState<TravelRequest | null>(null);
   const [planDetails, setPlanDetails] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
+  
+  // Modals State
+  const [actionModalOpen, setActionModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'book' | 'revert' | null>(null);
+  
+  const [replyModalOpen, setReplyModalOpen] = useState(false);
+  const [currentReply, setCurrentReply] = useState('');
+  const [currentReplyTitle, setCurrentReplyTitle] = useState('');
 
   // Filter requests
   const processingRequests = requests.filter(r => r.status === 'Processing (Agent)');
   const actionRequiredRequests = requests.filter(r => r.status === 'Action Required');
   
+  // --- HANDLERS ---
   const handleOpenAction = (req: TravelRequest, action: 'book' | 'revert') => {
     setSelectedRequest(req);
     setModalAction(action);
     setPlanDetails(''); 
-    setModalOpen(true);
+    setActionModalOpen(true);
+  };
+
+  const handleOpenReply = (req: TravelRequest) => {
+    const reply = getEmployeeReply(req.agentNotes);
+    
+    if (reply) {
+        setCurrentReply(reply);
+        setCurrentReplyTitle('Employee Reply');
+    } else {
+        setCurrentReply(req.agentNotes || "No notes available.");
+        setCurrentReplyTitle('Request Notes');
+    }
+    setReplyModalOpen(true);
   };
 
   const confirmOptionsSend = () => {
     if (!selectedRequest) return;
-    // Send standard text options
     onUpdateStatus(selectedRequest.id, 'Action Required', planDetails);
-    setModalOpen(false);
+    setActionModalOpen(false);
   };
 
-  // --- HANDLER FOR BOOKING FORM ---
   const handleBookingConfirm = (details: CostBreakdown, total: number) => {
     if (!selectedRequest) return;
-    
-    // Create a text summary for legacy support/email
-    const summaryNote = `Booking Confirmed.\n` + 
-                        `Total Cost: ₹${total}\n` +
-                        `Flight Config: ${details.flightCosts.length} Flights\n` +
-                        `Hotels: ${details.hotelCosts.length} Cities`;
-
-    // Send everything to API
+    // Use optional chaining (?.) to prevent crash if flights array is missing
+    // @ts-ignore
+    const segmentCount = details.flights?.length || 0;
+    const summaryNote = `Booking Confirmed.\nTotal Cost: ₹${total}\nSegments: ${segmentCount}`;
     onUpdateStatus(selectedRequest.id, 'Booked', summaryNote, details, total);
-    setModalOpen(false);
+    setActionModalOpen(false);
   };
 
-  // --- WHATSAPP LOGIC ---
   const handleAgentShare = (req: TravelRequest) => {
     let message = `Hello ${req.employeeName}, regarding your trip to ${req.destination}:\n\n`;
-
     if (req.status === 'Processing (Agent)') {
-        message += `I am currently processing your request. I will send you flight/hotel options shortly.`;
+        message += `I am processing your request. Options coming shortly.`;
     } else if (req.status === 'Action Required') {
-        message += `I have uploaded travel options for your review. Please log in to the portal and confirm your choice.\n\n(Request ID: ${req.id})`;
-    } else if (req.status === 'Booked') {
-        message += `Your booking is CONFIRMED! ✅\n\nDates: ${req.startDate} to ${req.endDate}\n\nPlease check your email for the tickets.`;
+        message += `Please check the portal for travel options.`;
     }
     const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
   };
 
-  // --- EXTRACT REPLY HELPER ---
   const getEmployeeReply = (notes?: string) => {
     if (!notes) return null;
-    // We look for the tag we saved in RequestDetails.tsx
-    const splitNotes = notes.split('[User Selection]:');
-    if (splitNotes.length > 1) {
-        return splitNotes[1].trim();
+    if (notes.toUpperCase().includes('USER SELECTION')) {
+        const parts = notes.split(/USER SELECTION/i);
+        return parts[1].replace(/^[\s:\-]+/g, '').trim();
     }
     return null;
   };
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
-      {/* Header & Stats */}
+      
+      {/* 1. DASHBOARD HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
            <h1 className="text-2xl font-bold text-gray-900">Travel Desk Console</h1>
-           <p className="text-gray-500 mt-1">Manage bookings and flight options for employees.</p>
+           <p className="text-gray-500 mt-1">Manage bookings, flight options, and tickets.</p>
         </div>
         <div className="bg-white px-4 py-2 rounded-xl border border-gray-200 shadow-sm flex gap-4 text-sm font-medium">
             <span className="flex items-center gap-2 text-primary-600">
@@ -94,7 +105,7 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
         </div>
       </div>
 
-      {/* Requests List */}
+      {/* 2. REQUESTS TO PROCESS (Active) */}
       <div className="space-y-4">
         <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
             <Plane className="text-primary-500" size={20} /> 
@@ -103,16 +114,21 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
         
         {processingRequests.length === 0 ? (
             <div className="bg-white p-12 rounded-2xl border border-gray-100 text-center flex flex-col items-center gap-3">
-                <CheckCircle size={32} className="text-green-500" />
+                <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center text-green-500">
+                    <CheckCircle size={32} />
+                </div>
                 <p className="text-gray-500 font-medium">All caught up! No active tasks.</p>
             </div>
         ) : (
             <div className="grid grid-cols-1 gap-4">
                 {processingRequests.map(req => {
-                    const reply = getEmployeeReply(req.agentNotes);
+                    const hasReply = req.agentNotes && req.agentNotes.toUpperCase().includes('USER SELECTION');
+                    
                     return (
                         <div key={req.id} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow group">
                             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+                                
+                                {/* LEFT: Employee & Trip Info */}
                                 <div className="flex items-start gap-4 flex-1">
                                     <img 
                                         src={req.employeeAvatar || `https://ui-avatars.com/api/?name=${req.employeeName}&background=random`} 
@@ -128,45 +144,34 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
                                         
                                         <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-2">
                                             <span className="flex items-center gap-1.5"><MapPin size={16} className="text-gray-400"/> {req.destination}</span>
-                                            <span className="flex items-center gap-1.5"><Calendar size={16} className="text-gray-400"/> {new Date(req.startDate).toLocaleDateString()} - {new Date(req.endDate).toLocaleDateString()}</span>
+                                            <span className="flex items-center gap-1.5"><Calendar size={16} className="text-gray-400"/> {new Date(req.startDate).toLocaleDateString()}</span>
                                         </div>
 
-                                        {/* --- REPLY SECTION --- */}
-                                        {reply ? (
-                                            <div className="mt-3 bg-blue-50 border border-blue-100 p-3 rounded-xl animate-fade-in-up">
-                                                <p className="text-xs font-bold text-blue-700 uppercase mb-1 flex items-center gap-1">
-                                                    <MessageSquare size={12}/> Employee Reply:
-                                                </p>
-                                                <p className="text-sm text-gray-800 font-medium leading-relaxed">"{reply}"</p>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-2 text-xs text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg w-fit">
-                                                <Clock size={14}/> <strong>Pref Time:</strong> {req.startTime || 'Any'} - {req.endTime || 'Any'}
-                                                {req.preferredFlight && <span className="ml-2 border-l border-gray-300 pl-2">Note: {req.preferredFlight}</span>}
-                                            </div>
-                                        )}
+                                        <div className="mt-3">
+                                            <button 
+                                                onClick={() => handleOpenReply(req)}
+                                                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shadow-sm border ${
+                                                    hasReply 
+                                                    ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 animate-pulse' 
+                                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                {hasReply ? <MessageSquare size={16} /> : <FileText size={16} />}
+                                                {hasReply ? "View Employee Reply" : "View Request Notes"}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 
+                                {/* RIGHT: Actions */}
                                 <div className="flex gap-3 self-end xl:self-center w-full xl:w-auto">
-                                    <button 
-                                        onClick={() => handleAgentShare(req)}
-                                        className="px-3 py-2.5 bg-green-50 border border-green-200 text-green-600 rounded-xl hover:bg-green-100 transition-colors"
-                                        title="WhatsApp"
-                                    >
+                                    <button onClick={() => handleAgentShare(req)} className="px-3 py-2.5 bg-green-50 border border-green-200 text-green-600 rounded-xl hover:bg-green-100 transition-colors">
                                         <MessageCircle size={20} />
                                     </button>
-
-                                    <button 
-                                        onClick={() => handleOpenAction(req, 'revert')}
-                                        className="flex-1 xl:flex-none px-5 py-2.5 bg-white border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:text-gray-900 transition-colors flex items-center justify-center gap-2"
-                                    >
-                                        <Send size={18} /> {reply ? 'Resend Options' : 'Send Options'}
+                                    <button onClick={() => handleOpenAction(req, 'revert')} className="flex-1 xl:flex-none px-5 py-2.5 bg-white border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:text-gray-900 transition-colors flex items-center justify-center gap-2">
+                                        <Send size={18} /> Send Options
                                     </button>
-                                    <button 
-                                        onClick={() => handleOpenAction(req, 'book')}
-                                        className="flex-1 xl:flex-none px-5 py-2.5 bg-primary-600 text-white font-bold rounded-xl hover:bg-primary-700 shadow-lg shadow-primary-500/20 transition-colors flex items-center justify-center gap-2"
-                                    >
+                                    <button onClick={() => handleOpenAction(req, 'book')} className="flex-1 xl:flex-none px-5 py-2.5 bg-primary-600 text-white font-bold rounded-xl hover:bg-primary-700 shadow-lg shadow-primary-500/20 transition-colors flex items-center justify-center gap-2">
                                         <CheckCircle size={18} /> Complete Booking
                                     </button>
                                 </div>
@@ -178,27 +183,25 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
         )}
       </div>
 
-      {/* Waiting List */}
+      {/* 3. AWAITING EMPLOYEE (Pending) */}
       <div className="space-y-4 pt-8 border-t border-gray-200">
          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Clock className="text-orange-500" size={20} /> 
-            Awaiting Employee Selection
+            <Clock className="text-orange-500" size={20} /> Awaiting Employee Selection
         </h2>
          {actionRequiredRequests.length === 0 ? (
             <div className="text-sm text-gray-400 italic pl-1">No requests currently waiting.</div>
         ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {actionRequiredRequests.map(req => (
-                    <div key={req.id} className="bg-gray-50 p-5 rounded-2xl border border-gray-200 opacity-80 hover:opacity-100 transition-opacity relative group">
-                         <div className="flex justify-between items-start mb-2">
-                            <h4 className="font-bold text-gray-900">{req.employeeName}</h4>
+                    <div key={req.id} className="bg-gray-50 p-5 rounded-2xl border border-gray-200 opacity-90 hover:opacity-100 transition-opacity relative group">
+                         <div className="flex justify-between items-start mb-3">
+                            <h4 className="font-bold text-gray-900 text-sm">{req.employeeName}</h4>
                             <span className="text-[10px] uppercase bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-bold tracking-wider">Waiting</span>
                          </div>
-                         <p className="text-sm text-gray-600 mb-3 flex items-center gap-1"><Plane size={14}/> Trip to {req.destination}</p>
-                         <button 
-                            onClick={() => handleAgentShare(req)}
-                            className="absolute top-4 right-4 text-xs font-bold text-green-600 hover:bg-green-100 bg-white border border-green-200 px-2 py-1 rounded-lg flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shadow-sm"
-                         >
+                         <p className="text-sm text-gray-600 mb-3 flex items-center gap-2">
+                            <Plane size={14}/> Trip to <strong>{req.destination}</strong>
+                         </p>
+                         <button onClick={() => handleAgentShare(req)} className="absolute top-4 right-4 text-xs font-bold text-green-600 hover:bg-green-100 bg-white border border-green-200 px-2 py-1 rounded-lg flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shadow-sm">
                             <MessageCircle size={12}/> Nudge
                          </button>
                     </div>
@@ -207,33 +210,70 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
         )}
       </div>
 
-      {/* Modal & Forms */}
-      {modalOpen && (
+      {/* --- MODAL 1: REPLY VIEWER --- */}
+      {replyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                    <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                        {currentReplyTitle === 'Employee Reply' ? <MessageSquare className="text-blue-600" size={20}/> : <FileText className="text-gray-500" size={20}/>}
+                        {currentReplyTitle}
+                    </h3>
+                    <button onClick={() => setReplyModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+                </div>
+                <div className="p-8 max-h-[60vh] overflow-y-auto">
+                    <div className="bg-blue-50 p-6 rounded-2xl text-gray-900 text-lg leading-relaxed font-medium border border-blue-200 shadow-inner whitespace-pre-wrap">
+                        {currentReply}
+                    </div>
+                </div>
+                <div className="p-4 border-t border-gray-100 flex justify-end">
+                    <button onClick={() => setReplyModalOpen(false)} className="px-6 py-2.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-black transition-colors">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* --- MODAL 2: ACTIONS --- */}
+      {actionModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[95vh] overflow-y-auto">
                 <div className="p-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-4">
-                        {modalAction === 'book' ? 'Finalize Booking' : 'Send Travel Options'}
-                    </h2>
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-xl font-bold text-gray-900">
+                            {modalAction === 'book' ? 'Finalize Booking' : 'Send Travel Options'}
+                        </h2>
+                        <button onClick={() => setActionModalOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
                     
+                    {/* BOOKING COMPLETION FORM */}
                     {modalAction === 'book' && selectedRequest ? (
                         <BookingCompletionForm 
                             request={selectedRequest}
                             onConfirm={handleBookingConfirm}
-                            onCancel={() => setModalOpen(false)}
+                            onCancel={() => setActionModalOpen(false)}
                         />
                     ) : (
                         <>
-                            <p className="text-sm text-gray-600 mb-2 font-medium">Enter flight/hotel options:</p>
+                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4">
+                                <p className="text-xs font-bold text-blue-700 uppercase mb-1">Employee Preferences</p>
+                                <p className="text-sm text-blue-900">{selectedRequest?.preferredFlight || "No specific preferences."}</p>
+                            </div>
+
+                            <p className="text-sm text-gray-600 mb-2 font-medium">Enter travel options for the employee to review:</p>
                             <textarea 
-                                className="w-full h-40 p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-sm font-mono resize-none"
+                                className="w-full h-40 p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-sm font-mono transition-all resize-none"
                                 value={planDetails}
                                 onChange={(e) => setPlanDetails(e.target.value)}
-                                placeholder="e.g. Option 1: Indigo 6E-554..."
+                                placeholder="e.g. Option 1: Indigo 6E-554 - 09:00 AM - ₹5,000..."
                             ></textarea>
+                            
                             <div className="flex gap-3 pt-4">
-                                <button onClick={() => setModalOpen(false)} className="flex-1 py-3 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50">Cancel</button>
-                                <button onClick={confirmOptionsSend} className="flex-1 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-black">Send Options</button>
+                                <button onClick={() => setActionModalOpen(false)} className="flex-1 py-3 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50">Cancel</button>
+                                <button onClick={confirmOptionsSend} className="flex-1 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-black flex items-center justify-center gap-2">
+                                    <Send size={18}/> Send Options
+                                </button>
                             </div>
                         </>
                     )}

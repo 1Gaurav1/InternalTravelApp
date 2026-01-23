@@ -1,4 +1,4 @@
-// types.ts
+// src/types.ts
 
 export enum UserRole {
   EMPLOYEE = 'EMPLOYEE',
@@ -36,46 +36,58 @@ export type RequestStatus =
 // Status for Users (Account Status)
 export type UserStatus = 'Active' | 'Inactive' | 'Suspended';
 
-export interface TravelRequest {
-  id?: string; 
-  destination: string;
-  startDate: string;
-  endDate: string;
-  startTime?: string;
-  endTime?: string;
-  status: RequestStatus; 
-  amount: number;
-  employeeName: string;
-  employeeAvatar?: string;
-  department: string;
-  type: 'Domestic' | 'International';
-  submittedDate: string;
-  purpose?: string;
-  agentNotes?: string;
-  preferredFlight?: string;
-  agentOptions?: string[];
-  flightOptions?: FlightOption[];
-  selectedOptionId?: string;
-  bookingDetails?: CostBreakdown;
+// --- BOOKING DETAILS STRUCTURES (Updated for Agent Dashboard) ---
+
+export interface FlightBookingDetails {
+  from: string;        // Auto-populated & Locked
+  to: string;          // Auto-populated & Locked
+  mode?: 'Flight' | 'Train'; // <--- ADDED: Support for Train toggle
+  airline: string;     // Can hold "Indigo" or "Rajdhani Express"
+  flightNumber: string; // Can hold Flight No or Train No
+  departureTime: string; 
+  arrivalTime: string;
+  cost: number;
+  agentFee: number;
+  ticketFile?: string; // Stores filename of uploaded PDF
+}
+
+export interface HotelBookingDetails {
+  city: string;        // Auto-populated & Locked
+  hotelName: string;
+  checkIn: string;
+  checkOut: string;
+  cost: number;
+  agentFee: number;
+  bookingStatus: 'Confirmed' | 'Book Later'; 
+  bookingFile?: string; // Upload Hotel Voucher PDF
+}
+
+export interface CabBookingDetails {
+  required: boolean;
+  cost: number;
+  agentFee: number;
+  remarks?: string;
+}
+
+export interface OtherCostDetails {
+  cost: number;
+  agentFee: number;
+  description?: string;
 }
 
 export interface CostBreakdown {
-  flightCosts: {
-    from: string;
-    to: string;
-    airlineCost: number;
-    agentFee: number;
-    ticketFile?: string; // Mock file name
-  }[];
-  hotelCosts: {
-    city: string;
-    hotelCost: number;
-    agentFee: number;
-  }[];
-  cabCost: number;
-  otherCost: number;
-  totalAmount: number;
+  flights: FlightBookingDetails[]; // Matches 'segments' from the form
+  hotels: HotelBookingDetails[];
+  cab: CabBookingDetails;
+  other: OtherCostDetails;
+  totalAmount: number; // Sum of all costs + agent fees
+  
+  // Optional alias if needed for specific reports, 
+  // essentially the same as 'flights' above
+  flightCosts?: FlightBookingDetails[]; 
 }
+
+// --- MAIN REQUEST INTERFACE ---
 
 export interface FlightOption {
   id: string;
@@ -87,6 +99,42 @@ export interface FlightOption {
   isSelected?: boolean;
 }
 
+export interface TravelRequest {
+  id: string; 
+  destination: string;
+  startDate: string;
+  endDate: string;
+  startTime?: string;
+  endTime?: string;
+  status: RequestStatus; 
+  amount: number; // Total Trip Cost
+  
+  // Employee Details
+  employeeName: string;
+  employeeAvatar?: string;
+  department: string;
+  branch?: string;      // <--- ADDED for Admin reporting
+  type: 'Domestic' | 'International';
+  submittedDate: string;
+  
+  // User Inputs
+  purpose?: string;
+  preferredFlight?: string; // "Special Instructions"
+  
+  // Workflow Data
+  managerName?: string;     // <--- ADDED to track who approved
+  rejectionReason?: string; // <--- ADDED for rejection modal
+  agentNotes?: string;      // Stores Origin, Chat history, etc.
+  
+  // Agent Data
+  agentOptions?: string[]; // Legacy text options
+  flightOptions?: FlightOption[]; // Structured options (if used)
+  selectedOptionId?: string;
+  
+  // Final Booking
+  bookingDetails?: CostBreakdown;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -94,7 +142,8 @@ export interface User {
   password?: string;
   role: string[]; 
   department: string;
-  status: UserStatus; // Use UserStatus here (Active/Inactive/Suspended)
+  branch?: string; // <--- ADDED
+  status: UserStatus;
   lastActive?: string;
   avatar?: string;
 }

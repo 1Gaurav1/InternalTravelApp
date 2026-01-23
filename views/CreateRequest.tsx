@@ -255,7 +255,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
         }
       }
 
-      finalDestination = `Multi City Trip`; 
+      finalDestination = segments[segments.length - 1].to;
       finalStartDate = segments[0].date;
       finalEndDate = segments[segments.length - 1].date;
       finalStartTime = segments[0].preferredStartTime;
@@ -284,6 +284,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
 
     const newRequest: TravelRequest = {
       // Backend will generate ID
+      id: `TR-${new Date().getFullYear()}${String(Math.floor(Math.random()*10000)).padStart(4, '0')}`,
       destination: finalDestination,
       startDate: finalStartDate,
       endDate: finalEndDate,

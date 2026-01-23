@@ -2,7 +2,6 @@ import { TravelRequest, User, RequestStatus, CostBreakdown } from './types';
 
 const API_URL = 'https://internaltravelapp.onrender.com/api';
 
-// Helper to handle response errors
 const handleResponse = async (response: Response) => {
   if (!response.ok) {
     const error = await response.json();
@@ -85,6 +84,7 @@ export const api = {
     return handleResponse(res);
   },
 
+  // Legacy Option Sender (Optional use now, but kept for compatibility)
   sendAgentOptions: async (id: string, options: string[]) => {
     const res = await fetch(`${API_URL}/requests/${id}/options`, {
       method: "PUT",
@@ -103,20 +103,25 @@ export const api = {
     return handleResponse(res);
   },
 
-  // --- UPDATED FUNCTION ---
+  // --- UPDATED: HANDLES ALL NEW FEATURES ---
   updateRequestStatus: async (
     id: string, 
     status: RequestStatus, 
     agentNotes?: string, 
-    bookingDetails?: CostBreakdown, // New Param
-    amount?: number // New Param (Total Cost)
+    bookingDetails?: CostBreakdown, // Handles PDF strings & Book Later status
+    amount?: number,
+    rejectionReason?: string, // <--- NEW: For Manager/Admin rejections
+    managerName?: string      // <--- NEW: For audit trails/reports
   ): Promise<TravelRequest> => {
     
-    // We send a merged object. The backend should handle partial updates.
-    const payload: any = { status, agentNotes };
-    
+    const payload: any = { status };
+
+    // Clean payload construction (only send what exists)
+    if (agentNotes) payload.agentNotes = agentNotes;
     if (bookingDetails) payload.bookingDetails = bookingDetails;
     if (amount) payload.amount = amount;
+    if (rejectionReason) payload.rejectionReason = rejectionReason;
+    if (managerName) payload.managerName = managerName;
 
     const res = await fetch(`${API_URL}/requests/${id}/status`, {
       method: 'PUT',

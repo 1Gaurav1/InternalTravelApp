@@ -3,7 +3,7 @@ import { ViewState, TravelRequest, RequestStatus } from '../types';
 import { 
   CheckCircle, Clock, AlertCircle, 
   TrendingUp, Calendar, Download, X, Search, Filter, Eye, MapPin, Building, FileText,
-  Plane, Bed, ArrowRight, MessageSquare
+  Plane, Bed, ArrowRight, MessageSquare, User, Briefcase
 } from 'lucide-react';
 import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -12,7 +12,6 @@ interface ManagerDashboardProps {
   onNavigate: (view: ViewState) => void;
   onViewRequest: (id: string) => void;
   requests: TravelRequest[];
-  // Ensure the parent handles 'rejectionReason'
   onUpdateStatus: (id: string, status: RequestStatus, notes?: string, booking?: any, amount?: number, rejectionReason?: string) => void;
 }
 
@@ -27,7 +26,6 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
 
   // TRIGGER REJECTION
   const handleRejectClick = (id: string) => {
-      // Close the details view if open, so the modal is clear
       setViewingRequest(null);
       setRejectingId(id);
   };
@@ -35,8 +33,6 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
   // CONFIRM REJECTION WITH REASON
   const confirmReject = (reason?: string) => {
     if (rejectingId) {
-        // Pass the reason (comment) back to the parent component
-        // This ensures it gets saved into 'agentNotes' or a 'rejectionReason' field
         onUpdateStatus(rejectingId, 'Rejected', undefined, undefined, undefined, reason);
         setRejectingId(null);
     }
@@ -65,27 +61,35 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
 
   // --- FORMATTING HELPERS ---
   const formatDate = (dateString: string) => {
-    if (!dateString) return '--/--/----';
-    return new Date(dateString).toLocaleDateString('en-GB'); 
+    if (!dateString) return '--/--';
+    return new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
-  const formatTime = (dateString: string) => {
-    if (!dateString) return '--:--';
+  const formatTime = (dateString?: string) => {
+    if (!dateString) return '';
     return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const getRouteDisplay = (req: TravelRequest) => {
-    // 1. Try to find "Origin: City" in notes
-    const originMatch = req.agentNotes?.match(/Origin:\s*(.*?)(\n|$)/);
-    const origin = originMatch ? originMatch[1].trim() : null;
-
-    if (req.destination.includes(',')) {
-        return req.destination.split(',').map(s => s.trim()).join(' ➝ ');
+  // --- SMART ITINERARY PARSER (Same logic as MyRequests for consistency) ---
+  const getTimelineCities = (req: TravelRequest) => {
+    // 1. If Booked, use exact flight data
+    if (req.bookingDetails?.flights?.length) {
+       const cities = [req.bookingDetails.flights[0].from];
+       req.bookingDetails.flights.forEach((f: any) => cities.push(f.to));
+       return [...new Set(cities)]; 
     }
-    if (origin) {
-        return `${origin} ➝ ${req.destination}`;
+    // 2. Try parsing "Multi City" format from Agent Notes
+    const multiCityMatches = [...(req.agentNotes?.matchAll(/\d+\.\s*(.*?)\s*->\s*(.*?)\s*\|/g) || [])];
+    if (multiCityMatches.length > 0) {
+        const cities = [multiCityMatches[0][1].split(',')[0].trim()];
+        multiCityMatches.forEach(m => cities.push(m[2].split(',')[0].trim()));
+        return cities;
     }
-    return req.destination;
+    // 3. Fallback: Parse "Origin: X" and Destination string
+    const origin = req.agentNotes?.match(/Origin:\s*(.*?)(\n|$)/)?.[1]?.split(',')[0].trim();
+    const dests = req.destination.split(',').map(s => s.split(',')[0].trim());
+    if (origin && origin !== "Origin") return [origin, ...dests];
+    return ["Origin", ...dests];
   };
 
   return (
@@ -198,9 +202,9 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
                             <div className="flex-1 px-0 md:px-4">
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="font-bold text-gray-900 text-sm">{item.destination}</span>
-                                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${item.type === 'International' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    {/* <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${item.type === 'International' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                                         {item.type}
-                                    </span>
+                                    </span> */}
                                 </div>
                                 <p className="text-xs text-gray-600 font-medium">
                                     {formatDate(item.startDate)} — {formatDate(item.endDate)}
@@ -277,7 +281,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
 
       {/* --- MODALS --- */}
 
-      {/* 1. REJECTION MODAL (High Z-Index to stay on top) */}
+      {/* 1. REJECTION MODAL */}
       <div className="relative z-[60]"> 
         <ConfirmationModal
             isOpen={!!rejectingId}
@@ -293,189 +297,169 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
         />
       </div>
 
-      {/* 2. PROFESSIONAL VIEW DETAILS MODAL */}
+      {/* 2. MANAGER DETAIL MODAL (Updated to "Butter UI") */}
       {viewingRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm animate-fade-in p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm animate-fade-in p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[95vh]">
                 
-                {/* Modal Header */}
-                <div className="bg-white px-8 py-6 border-b border-gray-100 flex justify-between items-start shrink-0">
+                {/* Header */}
+                <div className="bg-[#1e293b] px-8 py-6 relative flex justify-between items-start shrink-0 rounded-t-3xl">
                     <div className="flex items-center gap-5">
-                         <img 
+                        <img 
                             src={viewingRequest.employeeAvatar || `https://ui-avatars.com/api/?name=${viewingRequest.employeeName}&background=random`} 
-                            className="w-16 h-16 rounded-full border-4 border-gray-50 shadow-sm" 
+                            className="w-16 h-16 rounded-full border-4 border-white/10 shadow-sm" 
                             alt="" 
                         />
                         <div>
-                             <h3 className="font-bold text-2xl text-gray-900">{viewingRequest.employeeName}</h3>
-                             <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-                                <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-600 font-medium text-xs"><Building size={12}/> {viewingRequest.department}</span>
-                                <span className="flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded text-blue-600 font-medium text-xs"><MapPin size={12}/> {viewingRequest.branch || 'Headquarters'}</span>
-                             </div>
+                            <div className="flex items-center gap-3 mb-1">
+                                <h3 className="font-bold text-2xl text-white">{viewingRequest.employeeName}</h3>
+                                <span className="bg-white/10 text-white px-2 py-0.5 rounded text-xs font-medium border border-white/20">
+                                    {viewingRequest.department}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-gray-300">
+                                <span className="flex items-center gap-1"><MapPin size={12}/> {viewingRequest.branch || 'Headquarters'}</span>
+                                <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
+                                <span className="flex items-center gap-1"><Clock size={12}/> Submitted: {formatDate(viewingRequest.submittedDate?.toString() || '')}</span>
+                            </div>
                         </div>
                     </div>
-                    <button onClick={() => setViewingRequest(null)} className="p-2 bg-gray-50 rounded-full text-gray-400 hover:text-gray-900 hover:bg-gray-200 transition-all"><X size={20}/></button>
+                    <button onClick={() => setViewingRequest(null)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full text-white transition-colors">
+                        <X size={20}/>
+                    </button>
                 </div>
 
-                {/* Modal Content */}
-                <div className="p-8 overflow-y-auto bg-gray-50/30">
+                {/* Content */}
+                <div className="p-8 overflow-y-auto bg-gray-50 flex-1">
                     
-                    {/* IF BOOKED: SHOW DETAILED ITINERARY */}
-                    {viewingRequest.bookingDetails ? (
-                        <div className="space-y-8">
-                            
-                            {/* Flights Section */}
-                            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                                <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                                    <h4 className="font-bold text-gray-800 flex items-center gap-2 text-sm uppercase tracking-wide">
-                                        <Plane size={16} className="text-blue-500"/> Flight Itinerary
-                                    </h4>
-                                    <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                                        {viewingRequest.bookingDetails.flights.length} Leg{viewingRequest.bookingDetails.flights.length > 1 ? 's' : ''}
-                                    </span>
-                                </div>
-                                
-                                <div className="divide-y divide-gray-100">
-                                    {viewingRequest.bookingDetails.flights.map((f, i) => (
-                                        <div key={i} className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50 transition-colors">
-                                            
-                                            {/* Flight # and Airline */}
-                                            <div className="flex items-center gap-4 min-w-[180px]">
-                                                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm">
-                                                    #{i + 1}
-                                                </div>
-                                                <div>
-                                                    <p className="font-bold text-gray-900 text-sm">{f.airline}</p>
-                                                    <p className="text-xs text-gray-500 font-mono">{f.flightNumber}</p>
-                                                </div>
+                    {/* ITINERARY TIMELINE (The "Butter UI") */}
+                    <div className="mb-8">
+                        {/* If Booked: Show Specifics */}
+                        {viewingRequest.bookingDetails?.flights && viewingRequest.bookingDetails.flights.length > 0 ? (
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                                {viewingRequest.bookingDetails.flights.map((seg: any, idx: number) => (
+                                    <div key={idx} className="flex p-5 border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors gap-4">
+                                        <div className="w-24 shrink-0 flex flex-col justify-center text-right border-r border-gray-100 pr-4">
+                                            <span className="text-sm font-bold text-gray-900">{formatTime(seg.departureTime) || 'TBA'}</span>
+                                            <span className="text-[10px] text-gray-400 uppercase font-bold">{seg.departureTime ? formatDate(seg.departureTime) : 'Date'}</span>
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <h4 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                                                    {seg.from} <ArrowRight size={14} className="text-gray-300"/> {seg.to}
+                                                </h4>
+                                                <span className="font-bold text-gray-900">₹{seg.cost?.toLocaleString()}</span>
                                             </div>
-
-                                            {/* Route */}
-                                            <div className="flex-1 flex items-center gap-3">
-                                                <div className="text-right">
-                                                    <p className="font-bold text-gray-900 text-sm">{f.from}</p>
-                                                    <p className="text-xs text-gray-500">{formatTime(f.departureTime)}</p>
-                                                </div>
-                                                <div className="flex-1 flex flex-col items-center">
-                                                    <p className="text-[10px] text-gray-400 mb-1">{formatDate(f.departureTime)}</p>
-                                                    <div className="w-full h-px bg-gray-300 relative">
-                                                        <Plane size={12} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400 bg-white p-0.5 transform rotate-90"/>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <p className="font-bold text-gray-900 text-sm">{f.to}</p>
-                                                    <p className="text-xs text-gray-500">{formatTime(f.arrivalTime)}</p>
-                                                </div>
-                                            </div>
-
-                                            {/* Cost (Manager View) */}
-                                            <div className="text-right min-w-[100px] pl-4 border-l border-gray-100">
-                                                <p className="text-xs font-bold text-gray-400 uppercase">Cost</p>
-                                                <p className="font-bold text-gray-900">₹{f.cost.toLocaleString()}</p>
+                                            <div className="text-xs text-gray-500 font-medium flex items-center gap-3">
+                                                <span>{seg.airline} • {seg.flightNumber}</span>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Hotels Section */}
-                            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                                <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100">
-                                    <h4 className="font-bold text-gray-800 flex items-center gap-2 text-sm uppercase tracking-wide">
-                                        <Bed size={16} className="text-orange-500"/> Accommodation
-                                    </h4>
-                                </div>
-                                <div className="p-5 grid gap-4">
-                                    {viewingRequest.bookingDetails.hotels.map((h, i) => (
-                                        <div key={i} className="flex justify-between items-center p-4 border border-gray-100 rounded-xl bg-gray-50/30">
-                                            <div className="flex items-center gap-4">
-                                                <div className="p-2 bg-orange-100 text-orange-600 rounded-lg">
-                                                    <Building size={18}/>
-                                                </div>
-                                                <div>
-                                                    <p className="font-bold text-gray-900 text-sm">
-                                                        {h.bookingStatus === 'Confirmed' ? h.hotelName : 'Booking Deferred (Book Later)'}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
-                                                        <span>{h.city}</span>
-                                                        <span className="w-1 h-1 rounded-full bg-gray-300"></span>
-                                                        <span>Check-in: {formatDate(h.checkIn)}</span>
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                 {h.bookingStatus === 'Confirmed' ? (
-                                                     <p className="font-bold text-gray-900">₹{h.cost.toLocaleString()}</p>
-                                                 ) : (
-                                                     <span className="text-xs bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-bold">Pending</span>
-                                                 )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Total Summary */}
-                            <div className="flex justify-end">
-                                <div className="bg-gray-900 text-white p-5 rounded-2xl min-w-[250px] shadow-xl">
-                                    <p className="text-xs text-gray-400 uppercase font-bold tracking-wider mb-1">Total Trip Cost</p>
-                                    <div className="flex items-end justify-between">
-                                        <span className="text-3xl font-black">₹{viewingRequest.amount.toLocaleString()}</span>
-                                        <span className="text-xs bg-white/20 px-2 py-1 rounded text-white/80">Inc. Fees</span>
                                     </div>
+                                ))}
+                            </div>
+                        ) : (
+                            /* If Pending: Show Visual Nodes */
+                            <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-center">
+                                <div className="flex items-center gap-2 overflow-x-auto pb-2 w-full justify-between max-w-2xl">
+                                    {getTimelineCities(viewingRequest).map((city, i, arr) => (
+                                        <React.Fragment key={i}>
+                                            <div className="flex flex-col items-center min-w-[100px] shrink-0 z-10">
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-3 shadow-md border-4 border-white ${
+                                                    i === 0 ? 'bg-green-100 text-green-600' : 
+                                                    i === arr.length - 1 ? 'bg-red-100 text-red-600' : 
+                                                    'bg-blue-50 text-blue-500'
+                                                }`}>
+                                                    <MapPin size={16} className="fill-current"/>
+                                                </div>
+                                                <span className="text-sm font-bold text-gray-800 text-center leading-tight">{city}</span>
+                                                <span className="text-[10px] text-gray-400 uppercase font-bold mt-1">
+                                                    {i === 0 ? 'Start' : i === arr.length - 1 ? 'End' : 'Stop'}
+                                                </span>
+                                            </div>
+                                            {i < arr.length - 1 && (
+                                                <div className="h-0.5 flex-1 bg-gray-200 shrink-0 mb-8 mx-2 relative min-w-[40px]">
+                                                    <div className="absolute right-0 -top-1 w-2 h-2 border-t-2 border-r-2 border-gray-300 rotate-45"></div>
+                                                </div>
+                                            )}
+                                        </React.Fragment>
+                                    ))}
                                 </div>
                             </div>
+                        )}
+                    </div>
 
-                        </div>
-                    ) : (
-                        /* IF PENDING: SHOW STANDARD REQUEST DETAILS */
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        
+                        {/* LEFT: TRIP DATA */}
                         <div className="space-y-6">
-                             {/* --- PRIMARY DETAILS GRID --- */}
-                             <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                                    <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1 mb-1"><MapPin size={12}/> Destination</label>
-                                    <p className="font-bold text-gray-900 text-lg">{getRouteDisplay(viewingRequest)}</p>
-                                </div>
-                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                                    <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1 mb-1"><Calendar size={12}/> Dates</label>
-                                    <p className="font-bold text-gray-900 text-lg">
-                                        {formatDate(viewingRequest.startDate)} — {formatDate(viewingRequest.endDate)}
-                                    </p>
-                                </div>
-                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                                    <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1 mb-1"><Clock size={12}/> Requested Times</label>
-                                    <div className="flex items-center gap-3">
-                                        <div>
-                                            <span className="text-[10px] text-gray-400 block">Start</span>
-                                            <p className="font-bold text-gray-900 text-sm">{viewingRequest.startTime || '--:--'}</p>
-                                        </div>
-                                        <div className="w-px h-6 bg-gray-100"></div>
-                                        <div>
-                                            <span className="text-[10px] text-gray-400 block">End</span>
-                                            <p className="font-bold text-gray-900 text-sm">{viewingRequest.endTime || '--:--'}</p>
-                                        </div>
+                            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <Calendar size={12}/> Schedule
+                                </label>
+                                <div className="flex justify-between items-center mb-2">
+                                    <div>
+                                        <p className="text-xs text-gray-500">Departure</p>
+                                        <p className="font-bold text-gray-900">{formatDate(viewingRequest.startDate)}</p>
                                     </div>
-                                </div>
-                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                                    <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1 mb-1"><TrendingUp size={12}/> Est. Budget</label>
-                                    <p className="font-bold text-gray-900 text-lg">₹{viewingRequest.amount.toLocaleString()}</p>
+                                    <div className="w-8 h-px bg-gray-200"></div>
+                                    <div className="text-right">
+                                        <p className="text-xs text-gray-500">Return</p>
+                                        <p className="font-bold text-gray-900">{formatDate(viewingRequest.endDate)}</p>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h4 className="font-bold text-gray-900 text-sm mb-3 flex items-center gap-2">
-                                    <FileText size={16} className="text-gray-400"/> Purpose of Visit
-                                </h4>
-                                <p className="text-sm text-gray-600 leading-relaxed">
-                                    {viewingRequest.purpose || "No specific purpose details provided by the employee."}
+                            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <Briefcase size={12}/> Business Purpose
+                                </label>
+                                <p className="text-sm text-gray-700 leading-relaxed italic">
+                                    "{viewingRequest.purpose || "No specific purpose stated."}"
                                 </p>
                             </div>
                         </div>
-                    )}
+
+                        {/* RIGHT: REQUIREMENTS & COST */}
+                        <div className="space-y-6">
+                            {/* Requirements / Notes */}
+                            <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200/60">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <FileText size={12}/> Requirements & Notes
+                                </label>
+                                {viewingRequest.agentNotes ? (
+                                    <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap font-sans text-xs">
+                                        {viewingRequest.agentNotes}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-gray-400 italic">No special requirements.</p>
+                                )}
+                            </div>
+
+                            {/* COST SUMMARY (CRITICAL FOR MANAGERS) */}
+                            <div className="bg-gray-900 text-white p-6 rounded-2xl shadow-xl">
+                                <div className="flex items-center gap-2 mb-4 opacity-80">
+                                    <TrendingUp size={16}/>
+                                    <span className="text-xs font-bold uppercase tracking-widest">Estimated Cost</span>
+                                </div>
+                                <div className="flex items-end justify-between">
+                                    <div>
+                                        <p className="text-3xl font-black">₹{viewingRequest.amount?.toLocaleString() || '0'}</p>
+                                        <p className="text-xs text-gray-400 mt-1">Budget Impact</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className={`px-2 py-1 rounded text-xs font-bold ${viewingRequest.amount > 50000 ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-green-500/20 text-green-300 border border-green-500/30'}`}>
+                                            {viewingRequest.amount > 50000 ? 'High Value' : 'Standard'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
 
                 {/* Footer Actions */}
-                <div className="bg-white px-8 py-5 border-t border-gray-100 shrink-0 flex justify-end gap-3">
+                <div className="bg-white px-8 py-5 border-t border-gray-100 flex justify-end gap-3 shrink-0 rounded-b-3xl">
                     <button onClick={() => setViewingRequest(null)} className="px-6 py-3 font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors text-sm">Close</button>
                     {viewingRequest.status === 'Pending Manager' && (
                         <>

@@ -86,12 +86,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
     return new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  const getRouteDisplay = (req: TravelRequest) => {
-    const originMatch = req.agentNotes?.match(/Origin:\s*(.*?)(\n|$)/);
-    const origin = originMatch ? originMatch[1].trim() : null;
-    if (req.destination.includes(',')) return req.destination.split(',').map(s => s.trim()).join(' ➝ ');
-    if (origin) return `${origin} ➝ ${req.destination}`;
-    return req.destination;
+  const formatTime = (dateString?: string) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // --- SMART ITINERARY PARSER ---
+  const getTimelineCities = (req: TravelRequest) => {
+    // 1. If Booked, use exact flight data
+    if (req.bookingDetails?.flights?.length) {
+       const cities = [req.bookingDetails.flights[0].from];
+       req.bookingDetails.flights.forEach((f: any) => cities.push(f.to));
+       return [...new Set(cities)]; 
+    }
+    // 2. Try parsing "Multi City" format from Agent Notes
+    const multiCityMatches = [...(req.agentNotes?.matchAll(/\d+\.\s*(.*?)\s*->\s*(.*?)\s*\|/g) || [])];
+    if (multiCityMatches.length > 0) {
+        const cities = [multiCityMatches[0][1].split(',')[0].trim()];
+        multiCityMatches.forEach(m => cities.push(m[2].split(',')[0].trim()));
+        return cities;
+    }
+    // 3. Fallback: Parse "Origin: X" and Destination string
+    const origin = req.agentNotes?.match(/Origin:\s*(.*?)(\n|$)/)?.[1]?.split(',')[0].trim();
+    const dests = req.destination.split(',').map(s => s.split(',')[0].trim());
+    if (origin && origin !== "Origin") return [origin, ...dests];
+    return ["Origin", ...dests];
   };
 
   return (
@@ -184,20 +203,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
                       <div className="p-10 text-center text-gray-500">No requests found.</div>
                   ) : (
                       displayRequests.map(req => (
-                          <div key={req.id} className="p-5 flex items-center justify-between hover:bg-gray-50 transition-colors group">
-                              <div className="flex items-center gap-4">
-                                  <img src={req.employeeAvatar || `https://ui-avatars.com/api/?name=${req.employeeName}`} className="w-10 h-10 rounded-full border border-gray-200" alt=""/>
+                          <div key={req.id} className="p-5 flex flex-col md:flex-row md:items-center justify-between hover:bg-gray-50 transition-colors group gap-4 animate-fade-in">
+                              <div className="flex items-center gap-4 min-w-[200px]">
+                                  <img 
+                                    src={req.employeeAvatar || `https://ui-avatars.com/api/?name=${req.employeeName}`} 
+                                    className="w-12 h-12 rounded-full border-2 border-white shadow-sm" 
+                                    alt=""
+                                  />
                                   <div>
                                       <h4 className="font-bold text-gray-900 text-sm">{req.employeeName}</h4>
-                                      <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                                          <span className="flex items-center gap-1"><MapPin size={10}/> {req.destination.split(',')[0]}</span>
-                                          <span>•</span>
-                                          <span>{formatDate(req.startDate)}</span>
-                                      </div>
+                                      <p className="text-xs text-gray-500 font-medium">{req.department}</p>
                                   </div>
                               </div>
+
+                              <div className="flex-1 px-0 md:px-4">
+                                  <div className="flex items-center gap-2 mb-1">
+                                      <span className="font-bold text-gray-900 text-sm">{req.destination}</span>
+                                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${req.type === 'International' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                          {req.type}
+                                      </span>
+                                  </div>
+                                  <p className="text-xs text-gray-600 font-medium">
+                                      {formatDate(req.startDate)} — {formatDate(req.endDate)}
+                                  </p>
+                              </div>
+
                               <div className="flex items-center gap-3">
-                                  <div className="text-right mr-2">
+                                  <div className="text-right mr-2 hidden md:block">
                                       <p className="font-bold text-gray-900 text-sm">₹{req.amount.toLocaleString()}</p>
                                       <span className={`text-[10px] font-bold uppercase ${
                                           req.status === 'Pending Admin' ? 'text-yellow-600' : 
@@ -205,16 +237,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
                                       }`}>{req.status}</span>
                                   </div>
                                   
-                                  {req.status === 'Pending Admin' && (
-                                      <div className="flex items-center gap-2"> {/* Removed opacity classes */}
-                                          <button onClick={() => setViewingRequest(req)} className="p-2 text-gray-400 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors"><Eye size={16}/></button>
-                                          <button onClick={() => handleRejectClick(req.id)} className="p-2 text-red-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 rounded-lg transition-colors"><X size={16}/></button>
-                                          <button onClick={() => approveRequest(req.id)} className="p-2 text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"><CheckCircle size={16}/></button>
-                                      </div>
-                                  )}
-                                  {req.status !== 'Pending Admin' && (
-                                       <button onClick={() => setViewingRequest(req)} className="p-2 text-gray-300 hover:text-gray-500"><Eye size={16}/></button>
-                                  )}
+                                  <div className="flex items-center gap-2 border-t md:border-t-0 border-gray-100 pt-2 md:pt-0">
+                                      <button onClick={() => setViewingRequest(req)} className="p-2 text-gray-400 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors" title="View Details">
+                                          <Eye size={18}/>
+                                      </button>
+                                      {req.status === 'Pending Admin' && (
+                                          <>
+                                              <button onClick={() => handleRejectClick(req.id)} className="p-2 text-red-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 rounded-lg transition-colors" title="Reject">
+                                                  <X size={18}/>
+                                              </button>
+                                              <button onClick={() => approveRequest(req.id)} className="p-2 text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors" title="Approve">
+                                                  <CheckCircle size={18}/>
+                                              </button>
+                                          </>
+                                      )}
+                                  </div>
                               </div>
                           </div>
                       ))
@@ -252,79 +289,190 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
         onClose={() => setRejectingId(null)}
         onConfirm={(reason) => confirmReject(reason)}
         title="Reject Request"
-        message="Are you sure? This will return the request to the employee."
+        message="Are you sure? This will return the request to the employee/manager."
         type="danger"
         confirmText="Reject"
         showInput={true}
         inputRequired={true}
       />
 
-      {/* --- DETAIL MODAL (Matching Rich UI) --- */}
+      {/* --- DETAIL MODAL (PROFESSIONAL BUTTER UI) --- */}
       {viewingRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
-            <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col max-h-[90vh]">
-                <div className="bg-[#111827] px-8 py-8 relative">
-                    <button onClick={() => setViewingRequest(null)} className="absolute top-6 left-6 text-gray-400 hover:text-white flex items-center gap-2 text-sm transition-colors">
-                        <ArrowRight className="rotate-180" size={16}/> Back
-                    </button>
-                    <div className="mt-6 flex justify-between items-start">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm animate-fade-in p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[95vh]">
+                
+                {/* Header */}
+                <div className="bg-[#1e293b] px-8 py-6 relative flex justify-between items-start shrink-0 rounded-t-3xl">
+                    <div className="flex items-center gap-5">
+                        <img 
+                            src={viewingRequest.employeeAvatar || `https://ui-avatars.com/api/?name=${viewingRequest.employeeName}`} 
+                            className="w-16 h-16 rounded-full border-4 border-white/10 shadow-sm" 
+                            alt="" 
+                        />
                         <div>
-                            <span className={`px-3 py-1 text-xs font-bold rounded-lg uppercase ${viewingRequest.status === 'Pending Admin' ? 'bg-yellow-500/20 text-yellow-300' : 'bg-gray-700 text-gray-300'}`}>
-                                {viewingRequest.status}
-                            </span>
-                            <h2 className="text-3xl font-bold text-white mt-3 mb-2">{getRouteDisplay(viewingRequest)}</h2>
-                            <p className="text-gray-400 flex items-center gap-2">
-                                <User size={16}/> {viewingRequest.employeeName}
-                            </p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-xs text-gray-400 font-bold uppercase">Estimated Cost</p>
-                            <p className="text-3xl font-black text-white">₹{viewingRequest.amount.toLocaleString()}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="p-8 overflow-y-auto bg-gray-50 grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-6">
-                        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                            <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Calendar size={14}/> Schedule</h4>
-                            <div className="space-y-3">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Start</span>
-                                    <span className="font-bold text-gray-900">{formatDate(viewingRequest.startDate)} • {viewingRequest.startTime}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">End</span>
-                                    <span className="font-bold text-gray-900">{formatDate(viewingRequest.endDate)} • {viewingRequest.endTime}</span>
-                                </div>
+                            <div className="flex items-center gap-3 mb-1">
+                                <h3 className="font-bold text-2xl text-white">{viewingRequest.employeeName}</h3>
+                                <span className="bg-white/10 text-white px-2 py-0.5 rounded text-xs font-medium border border-white/20">
+                                    {viewingRequest.department}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-gray-300">
+                                <span className="flex items-center gap-1"><MapPin size={12}/> {viewingRequest.branch || 'Headquarters'}</span>
+                                <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
+                                <span className="flex items-center gap-1"><Clock size={12}/> Submitted: {formatDate(viewingRequest.submittedDate?.toString() || '')}</span>
                             </div>
                         </div>
-                        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                            <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Briefcase size={14}/> Preferences</h4>
-                            <p className="text-sm text-gray-700 leading-relaxed">{viewingRequest.preferredFlight || "None specified"}</p>
-                        </div>
                     </div>
-                    <div className="space-y-6">
-                        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm h-full">
-                            <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><FileText size={14}/> Business Purpose</h4>
-                            <p className="text-sm text-gray-700 leading-relaxed">{viewingRequest.purpose}</p>
-                        </div>
-                        {viewingRequest.agentNotes && (
-                            <div className="bg-blue-50 p-5 rounded-xl border border-blue-100 shadow-sm">
-                                <h4 className="text-xs font-bold text-blue-700 uppercase mb-2 flex items-center gap-2"><MessageSquare size={14}/> Previous Notes</h4>
-                                <p className="text-xs text-blue-900 whitespace-pre-wrap">{viewingRequest.agentNotes}</p>
+                    <button onClick={() => setViewingRequest(null)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full text-white transition-colors">
+                        <X size={20}/>
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-8 overflow-y-auto bg-gray-50 flex-1">
+                    
+                    {/* ITINERARY TIMELINE (BUTTER UI) */}
+                    <div className="mb-8">
+                        {/* If Booked: Show Specifics */}
+                        {viewingRequest.bookingDetails?.flights && viewingRequest.bookingDetails.flights.length > 0 ? (
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                                {viewingRequest.bookingDetails.flights.map((seg: any, idx: number) => (
+                                    <div key={idx} className="flex p-5 border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors gap-4">
+                                        <div className="w-24 shrink-0 flex flex-col justify-center text-right border-r border-gray-100 pr-4">
+                                            <span className="text-sm font-bold text-gray-900">{formatTime(seg.departureTime) || 'TBA'}</span>
+                                            <span className="text-[10px] text-gray-400 uppercase font-bold">{seg.departureTime ? formatDate(seg.departureTime) : 'Date'}</span>
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <h4 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                                                    {seg.from} <ArrowRight size={14} className="text-gray-300"/> {seg.to}
+                                                </h4>
+                                                <span className="font-bold text-gray-900">₹{seg.cost?.toLocaleString()}</span>
+                                            </div>
+                                            <div className="text-xs text-gray-500 font-medium flex items-center gap-3">
+                                                <span>{seg.airline} • {seg.flightNumber}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            /* If Pending: Show Visual Nodes */
+                            <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-center">
+                                <div className="flex items-center gap-2 overflow-x-auto pb-2 w-full justify-between max-w-2xl">
+                                    {getTimelineCities(viewingRequest).map((city, i, arr) => (
+                                        <React.Fragment key={i}>
+                                            <div className="flex flex-col items-center min-w-[100px] shrink-0 z-10">
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-3 shadow-md border-4 border-white ${
+                                                    i === 0 ? 'bg-green-100 text-green-600' : 
+                                                    i === arr.length - 1 ? 'bg-red-100 text-red-600' : 
+                                                    'bg-blue-50 text-blue-500'
+                                                }`}>
+                                                    <MapPin size={16} className="fill-current"/>
+                                                </div>
+                                                <span className="text-sm font-bold text-gray-800 text-center leading-tight">{city}</span>
+                                                <span className="text-[10px] text-gray-400 uppercase font-bold mt-1">
+                                                    {i === 0 ? 'Start' : i === arr.length - 1 ? 'End' : 'Stop'}
+                                                </span>
+                                            </div>
+                                            {i < arr.length - 1 && (
+                                                <div className="h-0.5 flex-1 bg-gray-200 shrink-0 mb-8 mx-2 relative min-w-[40px]">
+                                                    <div className="absolute right-0 -top-1 w-2 h-2 border-t-2 border-r-2 border-gray-300 rotate-45"></div>
+                                                </div>
+                                            )}
+                                        </React.Fragment>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        
+                        {/* LEFT: TRIP DATA */}
+                        <div className="space-y-6">
+                            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <Calendar size={12}/> Schedule
+                                </label>
+                                <div className="flex justify-between items-center mb-2">
+                                    <div>
+                                        <p className="text-xs text-gray-500">Departure</p>
+                                        <p className="font-bold text-gray-900">{formatDate(viewingRequest.startDate)}</p>
+                                    </div>
+                                    <div className="w-8 h-px bg-gray-200"></div>
+                                    <div className="text-right">
+                                        <p className="text-xs text-gray-500">Return</p>
+                                        <p className="font-bold text-gray-900">{formatDate(viewingRequest.endDate)}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <Briefcase size={12}/> Business Purpose
+                                </label>
+                                <p className="text-sm text-gray-700 leading-relaxed italic">
+                                    "{viewingRequest.purpose || "No specific purpose stated."}"
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* RIGHT: REQUIREMENTS & COST */}
+                        <div className="space-y-6">
+                            {/* Requirements / Notes */}
+                            <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200/60">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <FileText size={12}/> Requirements & Notes
+                                </label>
+                                {viewingRequest.agentNotes ? (
+                                    <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap font-sans text-xs">
+                                        {viewingRequest.agentNotes}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-gray-400 italic">No special requirements.</p>
+                                )}
+                            </div>
+
+                            {/* COST SUMMARY (CRITICAL FOR ADMINS) */}
+                            <div className="bg-gray-900 text-white p-6 rounded-2xl shadow-xl">
+                                <div className="flex items-center gap-2 mb-4 opacity-80">
+                                    <TrendingUp size={16}/>
+                                    <span className="text-xs font-bold uppercase tracking-widest">Total Approved Cost</span>
+                                </div>
+                                <div className="flex items-end justify-between">
+                                    <div>
+                                        <p className="text-3xl font-black">₹{viewingRequest.amount?.toLocaleString() || '0'}</p>
+                                        <p className="text-xs text-gray-400 mt-1">Ready for Disbursement</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className={`px-2 py-1 rounded text-xs font-bold ${viewingRequest.amount > 50000 ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-green-500/20 text-green-300 border border-green-500/30'}`}>
+                                            {viewingRequest.amount > 50000 ? 'High Value' : 'Standard'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
 
-                <div className="p-6 bg-white border-t border-gray-100 flex justify-end gap-3 shrink-0">
-                    <button onClick={() => setViewingRequest(null)} className="px-6 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors text-sm">Close</button>
+                {/* Footer Actions */}
+                <div className="bg-white px-8 py-5 border-t border-gray-100 flex justify-end gap-3 shrink-0 rounded-b-3xl">
+                    <button onClick={() => setViewingRequest(null)} className="px-6 py-3 font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors text-sm">Close</button>
                     {viewingRequest.status === 'Pending Admin' && (
                         <>
-                            <button onClick={() => handleRejectClick(viewingRequest.id)} className="px-6 py-3 text-red-600 font-bold hover:bg-red-50 rounded-xl border border-red-100 transition-colors">Reject</button>
-                            <button onClick={() => approveRequest(viewingRequest.id)} className="px-6 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-black flex items-center gap-2 shadow-lg transition-all transform hover:-translate-y-0.5">
-                                <CheckCircle size={18}/> Approve & Send to Agent
+                            <button 
+                                onClick={() => handleRejectClick(viewingRequest.id)}
+                                className="px-6 py-3 border border-red-100 text-red-600 hover:bg-red-50 font-bold rounded-xl transition-colors text-sm"
+                            >
+                                Reject
+                            </button>
+                            <button 
+                                onClick={() => approveRequest(viewingRequest.id)}
+                                className="px-6 py-3 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-lg transition-all text-sm flex items-center gap-2"
+                            >
+                                <CheckCircle size={18}/> Approve & Process
                             </button>
                         </>
                     )}

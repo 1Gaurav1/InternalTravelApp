@@ -17,30 +17,30 @@ app.get('/', (req, res) => {
 
 // --- MONGO CONNECTION ---
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI || '')
   .then(async () => {
     console.log('MongoDB Connected');
-    // Uncomment the line below if you ever need to reset the database with dummy users
+    // Uncomment the line below to seed data if needed
     // await seedData(); 
   })
   .catch(err => console.log('MongoDB Connection Error:', err));
 
 // --- SCHEMAS ---
 
-// Counter Schema (for ID generation)
+// Counter Schema
 const trCounterSchema = new mongoose.Schema({
   date: String,
   lastCounter: Number
 });
 const TRCounter = mongoose.model('TRCounter', trCounterSchema);
 
-// User Schema (UPDATED for Multiple Roles)
+// User Schema
 const userSchema = new mongoose.Schema({
   id: String,
   name: String,
   email: String,
   password: { type: String, default: '123' },
-  role: [String], // <--- Array of Strings to support multiple roles
+  role: [String], 
   department: String,
   status: String,
   lastActive: String,
@@ -48,7 +48,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// Request Schema
+// Request Schema (UPDATED)
 const requestSchema = new mongoose.Schema({
   id: String,
   destination: String,
@@ -65,7 +65,12 @@ const requestSchema = new mongoose.Schema({
   submittedDate: { type: Date, default: Date.now }, 
   agentNotes: String,
   employeeAvatar: String,
-  agentOptions: [String]
+  agentOptions: [String],
+  
+  // *** NEW FIELD ADDED HERE ***
+  // Allows storing the complex booking object (Flights, Trains, Hotels, Files)
+  // mongoose.Schema.Types.Mixed tells Mongo "Just save whatever JSON is sent"
+  bookingDetails: mongoose.Schema.Types.Mixed 
 });
 const TravelRequest = mongoose.model('TravelRequest', requestSchema);
 
@@ -92,12 +97,11 @@ async function seedData() {
   if (count === 0) {
     console.log('Seeding default users...');
     const users = [
-      // Updated roles to be Arrays ['ROLE'] matches the new Schema
-      { id: '1', name: 'Alex Morgan', email: 'employee@renee.com', role: ['EMPLOYEE'], department: 'Product', status: 'Active', lastActive: '2 mins ago', avatar: 'https://picsum.photos/seed/alex/200' },
-      { id: '2', name: 'James Wilson', email: 'manager@renee.com', role: ['MANAGER'], department: 'Sales', status: 'Active', lastActive: '1 hour ago', avatar: 'https://picsum.photos/seed/james/200' },
-      { id: '3', name: 'Sarah Jenkins', email: 'admin@renee.com', role: ['ADMIN'], department: 'IT', status: 'Active', lastActive: '5 hours ago', avatar: 'https://picsum.photos/seed/sarah/200' },
-      { id: '4', name: 'Super Admin', email: 'super@renee.com', role: ['SUPER_ADMIN'], department: 'Executive', status: 'Active', lastActive: 'Just now', avatar: 'https://picsum.photos/seed/super/200' },
-      { id: '5', name: 'Travel Desk', email: 'agent@renee.com', role: ['TRAVEL_AGENT'], department: 'Operations', status: 'Active', lastActive: '10 mins ago', avatar: 'https://picsum.photos/seed/agent/200' },
+      { id: '1', name: 'Alex Morgan', email: 'employee@renee.com', role: ['EMPLOYEE'], department: 'Product', status: 'Active', lastActive: '2 mins ago', avatar: 'https://ui-avatars.com/api/?name=Alex+Morgan&background=random' },
+      { id: '2', name: 'James Wilson', email: 'manager@renee.com', role: ['MANAGER'], department: 'Sales', status: 'Active', lastActive: '1 hour ago', avatar: 'https://ui-avatars.com/api/?name=James+Wilson&background=random' },
+      { id: '3', name: 'Sarah Jenkins', email: 'admin@renee.com', role: ['ADMIN'], department: 'IT', status: 'Active', lastActive: '5 hours ago', avatar: 'https://ui-avatars.com/api/?name=Sarah+Jenkins&background=random' },
+      { id: '4', name: 'Super Admin', email: 'super@renee.com', role: ['SUPER_ADMIN'], department: 'Executive', status: 'Active', lastActive: 'Just now', avatar: 'https://ui-avatars.com/api/?name=Super+Admin&background=random' },
+      { id: '5', name: 'Travel Desk', email: 'agent@renee.com', role: ['TRAVEL_AGENT'], department: 'Operations', status: 'Active', lastActive: '10 mins ago', avatar: 'https://ui-avatars.com/api/?name=Travel+Desk&background=random' },
     ];
     await User.insertMany(users);
   }
@@ -112,7 +116,6 @@ app.get('/api/users', async (req, res) => {
 });
 
 app.post('/api/users', async (req, res) => {
-  // Ensure 'role' is stored as an array, even if frontend sends a string
   const rawRole = req.body.role;
   const roleArray = Array.isArray(rawRole) ? rawRole : [rawRole || 'EMPLOYEE'];
 
@@ -146,7 +149,6 @@ app.post('/api/requests', async (req, res) => {
   const newReq = new TravelRequest({
     ...req.body,
     id: trId
-    // submittedDate defaults to Date.now() via schema
   });
 
   await newReq.save();
@@ -154,9 +156,16 @@ app.post('/api/requests', async (req, res) => {
 });
 
 app.put('/api/requests/:id/status', async (req, res) => {
-  const { status, agentNotes } = req.body;
+  // Destructure new fields 'bookingDetails' and 'amount'
+  const { status, agentNotes, bookingDetails, amount } = req.body;
+  
   const update = { status };
   if (agentNotes) update.agentNotes = agentNotes;
+  
+  // Save booking details if present
+  if (bookingDetails) update.bookingDetails = bookingDetails;
+  // Save total cost amount if present 
+  if (amount) update.amount = amount;
   
   const updatedReq = await TravelRequest.findOneAndUpdate(
     { id: req.params.id }, 
@@ -171,7 +180,6 @@ app.delete('/api/requests/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-// Agent sends travel options
 app.put('/api/requests/:id/options', async (req, res) => {
   const { options } = req.body;
   const updated = await TravelRequest.findOneAndUpdate(

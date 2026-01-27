@@ -64,7 +64,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, us
 
   const agentMenu = [
     { view: ViewState.TRAVEL_AGENT_DASHBOARD, label: 'Agent Console', icon: Briefcase },
-    { view: ViewState.ADMIN_REPORTS, label: 'All Bookings', icon: List }, 
+    // { view: ViewState.ADMIN_REPORTS, label: 'All Bookings', icon: List }, 
     // ...personalTravelMenu
   ];
 

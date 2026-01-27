@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TravelRequest, CostBreakdown, FlightBookingDetails, HotelBookingDetails } from '../types';
-import { Upload, MapPin, Calendar, CheckSquare, Train, Plane, FileText, IndianRupee, ArrowRight, Clock, AlertCircle, Car, Plus, X } from 'lucide-react';
+import { Upload, MapPin, Calendar, CheckSquare, Train, Plane, FileText, IndianRupee, ArrowRight, Clock, AlertCircle, Car, Plus, X, Lock } from 'lucide-react';
 import { toast } from 'react-hot-toast'; 
 
 interface Props {
@@ -14,117 +14,151 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
   // --- STATE ---
   const [segments, setSegments] = useState<FlightBookingDetails[]>([]);
   const [hotels, setHotels] = useState<HotelBookingDetails[]>([]);
-  
-  // Expenses keyed by INDEX to handle same-city stopovers correctly
   const [cab, setCab] = useState<{ [index: number]: { required: boolean, cost: number, agentFee: number, remarks: string } }>({});
   const [other, setOther] = useState<{ [index: number]: { cost: number, agentFee: number, description: string } }>({});
-
-  // Validation State
   const [showErrors, setShowErrors] = useState(false);
 
-  // --- 1. SMART ROUTE PARSING & INITIALIZATION ---
+  // --- 1. SMART ROUTE PARSING ---
   useEffect(() => {
-      // Helper to clean city names
       const cleanCity = (str: string) => {
           if (!str) return '';
-          let cleaned = str.split(',')[0].trim(); // Remove State
-          cleaned = cleaned.replace(/^\d+\.\s*/, ''); // Remove numbering "1. "
-          cleaned = cleaned.replace(/^(Origin:|From:|To:)/i, '').trim(); // Remove labels
+          let cleaned = str.split(',')[0].trim(); 
+          cleaned = cleaned.replace(/^\d+\.\s*/, '').replace(/^(Origin:|From:|To:)/i, '').trim();
           return cleaned;
       };
 
-      let citySequence: string[] = [];
-
-      // 1. Try Regex parsing for "A -> B" format
-      const multiCityMatches = [...(request.agentNotes?.matchAll(/(\d+\.)?\s*([a-zA-Z\s]+)(?:,[^->]+)?\s*->\s*([a-zA-Z\s]+)(?:,[^|]+)?/g) || [])];
-
-      if (multiCityMatches.length > 0) {
-          const startCity = cleanCity(multiCityMatches[0][2]);
-          citySequence.push(startCity);
-          multiCityMatches.forEach(match => {
-              citySequence.push(cleanCity(match[3]));
-          });
-          citySequence = [...new Set(citySequence)]; // Unique cities
-      } 
-      else {
-          // 2. Fallback parsing
-          const originMatch = request.agentNotes?.match(/(?:Origin|From):\s*(.*?)(\n|$)/i);
-          let origin = originMatch ? cleanCity(originMatch[1]) : ''; 
-          const destinations = request.destination.split(',').map(cleanCity);
-
-          if (origin && origin.toLowerCase() !== 'origin' && origin.toLowerCase() !== 'start city') {
-               citySequence = [origin, ...destinations];
-          } else {
-               citySequence = ['', ...destinations];
-          }
+      const noteLower = request.agentNotes?.toLowerCase() || '';
+      
+      // IMPROVED DETECTION LOGIC
+      // Check agentNotes, but also check for explicit properties if they exist
+      const isMultiCity = noteLower.includes('multi city') || (request.agentNotes?.includes('->') && !noteLower.includes('return'));
+      
+      // Robust Return Detection: 
+      // 1. Explicit note 
+      // 2. OR explicit 'tripType' property (if available on request object)
+      // 3. OR heuristic: Start Date != End Date AND not multi-city AND notes have "Origin"
+      // @ts-ignore
+      const explicitTripType = request.tripType?.toLowerCase();
+      let isReturn = explicitTripType === 'return' || noteLower.includes('return') || noteLower.includes('round trip');
+      
+      // Fallback: If not detected yet, check date difference logic for "A -> B" vs "A -> B -> A"
+      if (!isReturn && !isMultiCity) {
+         if (request.startDate !== request.endDate) {
+             // It implies a stay, likely a return trip if it's single destination
+             isReturn = true; 
+         }
       }
 
-      // --- INITIALIZE FLIGHTS ---
+      let initialSegments: FlightBookingDetails[] = [];
+      let initialHotels: HotelBookingDetails[] = [];
+
+      // --- EDIT MODE ---
       if (request.bookingDetails?.flights?.length) {
-          setSegments(request.bookingDetails.flights);
-      } else {
-          const newSegments: FlightBookingDetails[] = [];
-          if (citySequence.length < 2) citySequence.unshift(''); // Ensure at least 2 nodes
-
-          for (let i = 0; i < citySequence.length - 1; i++) {
-              newSegments.push({
-                  from: citySequence[i],
-                  to: citySequence[i+1],
-                  mode: 'Flight',
-                  airline: '', 
-                  flightNumber: '', 
-                  departureTime: '', 
-                  arrivalTime: '', 
-                  cost: 0, 
-                  agentFee: 0, 
-                  ticketFile: '' 
-              });
-          }
-          setSegments(newSegments);
-      }
-
-      // --- INITIALIZE HOTELS ---
-      if (request.bookingDetails?.hotels?.length) {
+          initialSegments = request.bookingDetails.flights;
           // @ts-ignore
-          setHotels(request.bookingDetails.hotels);
-      } else {
-          const destinations = citySequence.slice(1); 
-          const newHotels: HotelBookingDetails[] = destinations.map(city => ({
-              city: city,
-              hotelName: '', 
-              checkIn: request.startDate, 
-              checkOut: request.endDate, 
-              cost: 0, 
-              agentFee: 0,
-              bookingStatus: 'Confirmed', 
-              bookingFile: ''
-          }));
-          setHotels(newHotels);
+          initialHotels = request.bookingDetails.hotels || [];
+      } 
+      // --- NEW BOOKING ---
+      else {
+          if (isMultiCity) {
+              // 1. Multi-City Logic
+              const matches = [...(request.agentNotes?.matchAll(/(\d+\.)?\s*([a-zA-Z\s]+)(?:,[^->]+)?\s*->\s*([a-zA-Z\s]+)(?:,[^|]+)?/g) || [])];
+              let cities: string[] = [];
+              
+              if (matches.length > 0) {
+                  cities.push(cleanCity(matches[0][2])); 
+                  matches.forEach(m => cities.push(cleanCity(m[3]))); 
+              } else {
+                  const origin = cleanCity(request.agentNotes?.match(/Origin:\s*(.*)/i)?.[1] || '');
+                  const dests = request.destination.split(',').map(cleanCity);
+                  cities = [origin, ...dests].filter(c => c);
+              }
 
-          // Initialize Expenses (Keyed by Index)
-          // Default required = false so agent manually selects which city needs a cab
-          const initialCab: any = {};
-          const initialOther: any = {};
-          destinations.forEach((_, index) => {
-              initialCab[index] = { required: false, cost: 0, agentFee: 0, remarks: '' };
-              initialOther[index] = { cost: 0, agentFee: 0, description: '' };
-          });
-          setCab(initialCab);
-          setOther(initialOther);
+              for (let i = 0; i < cities.length - 1; i++) {
+                  // Pre-fill date only for first segment
+                  const date = i === 0 ? request.startDate : '';
+                  initialSegments.push(createEmptySegment(cities[i], cities[i+1], date));
+                  initialHotels.push(createEmptyHotel(cities[i+1], request.startDate, request.endDate));
+              }
+          } 
+          else if (isReturn) {
+              // 2. Return Trip Logic (A -> B -> A)
+              const originMatch = request.agentNotes?.match(/(?:Origin|From):\s*(.*?)(\n|$)/i);
+              // Fallback: if origin not found in notes, try to infer or use 'Origin' placeholder
+              const origin = originMatch ? cleanCity(originMatch[1]) : 'Origin';
+              const destination = cleanCity(request.destination);
+
+              // Flight 1: Origin -> Dest (Start Date)
+              initialSegments.push(createEmptySegment(origin, destination, request.startDate));
+              // Flight 2: Dest -> Origin (End Date)
+              initialSegments.push(createEmptySegment(destination, origin, request.endDate));
+
+              // Hotels/Services:
+              // 1. Destination: Hotel REQUIRED (Confirmed)
+              initialHotels.push(createEmptyHotel(destination, request.startDate, request.endDate));
+              
+              // 2. Origin (Return): Hotel NOT REQUIRED (Book Later) - For Cab/Extras only
+              const returnLeg = createEmptyHotel(origin, request.endDate, request.endDate);
+              returnLeg.bookingStatus = 'Book Later'; 
+              initialHotels.push(returnLeg);
+          } 
+          else {
+              // 3. One Way Logic
+              const originMatch = request.agentNotes?.match(/(?:Origin|From):\s*(.*?)(\n|$)/i);
+              const origin = originMatch ? cleanCity(originMatch[1]) : 'Origin';
+              const destination = cleanCity(request.destination);
+
+              initialSegments.push(createEmptySegment(origin, destination, request.startDate));
+              initialHotels.push(createEmptyHotel(destination, request.startDate, request.startDate));
+          }
       }
+
+      setSegments(initialSegments);
+      setHotels(initialHotels);
+
+      // Initialize Expenses
+      const initialCab: any = {};
+      const initialOther: any = {};
+      initialHotels.forEach((_, index) => {
+          initialCab[index] = { required: false, cost: 0, agentFee: 0, remarks: '' };
+          initialOther[index] = { cost: 0, agentFee: 0, description: '' };
+      });
+      setCab(initialCab);
+      setOther(initialOther);
+
   }, [request]);
 
-  // --- 2. DYNAMIC TOTAL ---
+  // --- HELPER FACTORIES ---
+  const createEmptySegment = (from: string, to: string, date: string = '') => ({
+      from, 
+      to, 
+      mode: 'Flight' as const, 
+      airline: '', 
+      flightNumber: '', 
+      departureTime: date ? `${date}T10:00` : '', 
+      arrivalTime: '', 
+      cost: 0, 
+      agentFee: 0, 
+      ticketFile: ''
+  });
+
+  const createEmptyHotel = (city: string, checkIn: string, checkOut: string): HotelBookingDetails => ({
+      city, 
+      hotelName: '', 
+      checkIn, 
+      checkOut, 
+      cost: 0, 
+      agentFee: 0, 
+      bookingStatus: 'Confirmed', 
+      bookingFile: ''
+  });
+
+  // --- 2. CALCULATIONS ---
   const calculateTotal = () => {
       const flightTotal = segments.reduce((acc, s) => acc + Number(s.cost) + Number(s.agentFee), 0);
-      
-      // Calculate Hotel total only if confirmed
       const hotelTotal = hotels.reduce((acc, h) => (h.bookingStatus === 'Confirmed' ? acc + Number(h.cost) + Number(h.agentFee) : acc), 0);
-      
-      // Only count cab cost if required is true
       const cabTotal = Object.values(cab).reduce((acc: number, c: any) => c.required ? acc + Number(c.cost) + Number(c.agentFee) : acc, 0);
       const otherTotal = Object.values(other).reduce((acc: number, o: any) => acc + Number(o.cost) + Number(o.agentFee), 0);
-      
       return flightTotal + hotelTotal + cabTotal + otherTotal;
   };
   const totalCost = calculateTotal();
@@ -156,10 +190,7 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
   };
 
   const handleCabToggle = (index: number) => {
-      setCab(prev => ({
-          ...prev,
-          [index]: { ...prev[index], required: !prev[index]?.required }
-      }));
+      setCab(prev => ({ ...prev, [index]: { ...prev[index], required: !prev[index]?.required } }));
   };
 
   const handleExpenseChange = (index: number, type: 'cab' | 'other', field: string, value: any) => {
@@ -170,19 +201,14 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
       }
   };
 
-  // --- VALIDATION & SUBMIT ---
+  // --- VALIDATION ---
   const validateAndSubmit = () => {
       let isValid = true;
-
-      // 1. Check Mandatory Flight Fields (Airline, Dates, Cost)
       segments.forEach(seg => {
           if (!seg.from || !seg.to || !seg.airline || !seg.flightNumber || !seg.departureTime || !seg.arrivalTime || !seg.cost) {
               isValid = false;
           }
       });
-
-      // NOTE: Hotel and Cab validations have been removed to make them optional.
-      // Agent can now submit a flight-only booking.
 
       if (!isValid) {
           setShowErrors(true);
@@ -202,13 +228,12 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
       }, totalCost);
   };
 
-  // Helper for error styling
   const getErrorClass = (val: any) => showErrors && !val ? "border-red-500 ring-1 ring-red-500 bg-red-50" : "border-slate-200 focus:border-pink-500 focus:ring-pink-500";
 
   return (
     <div className="space-y-8 pb-10">
       
-      {/* HEADER SUMMARY */}
+      {/* HEADER */}
       <div className="bg-slate-900 p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center shadow-xl text-white gap-4">
          <div>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Booking For</p>
@@ -223,7 +248,7 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
          </div>
       </div>
 
-      {/* 1. TRAVEL SEGMENTS */}
+      {/* 1. FLIGHT SEGMENTS */}
       <div className="space-y-6">
         <div className="flex justify-between items-end border-b border-gray-200 pb-3">
             <h3 className="font-bold text-slate-800 flex items-center gap-3 text-base">
@@ -240,20 +265,17 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
                         <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500 text-sm border border-slate-200 shrink-0">
                             {i + 1}
                         </div>
+                        {/* READ ONLY CITIES */}
                         <div className="flex items-center gap-3 w-full">
-                            <input 
-                                value={seg.from}
-                                onChange={(e) => handleSegmentChange(i, 'from', e.target.value)}
-                                className={`font-bold text-xl text-slate-900 border-b border-dashed outline-none bg-transparent w-full ${getErrorClass(seg.from)}`}
-                                placeholder="Start City *"
-                            />
+                            <div className="relative w-full">
+                                <input value={seg.from} readOnly className="font-bold text-xl text-slate-900 border-b border-dashed border-slate-200 bg-gray-50/50 w-full cursor-not-allowed focus:outline-none"/>
+                                <Lock size={12} className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-300"/>
+                            </div>
                             <ArrowRight className="text-slate-300 shrink-0" size={20} />
-                            <input 
-                                value={seg.to}
-                                onChange={(e) => handleSegmentChange(i, 'to', e.target.value)}
-                                className={`font-bold text-xl text-slate-900 border-b border-dashed outline-none bg-transparent w-full ${getErrorClass(seg.to)}`}
-                                placeholder="End City *"
-                            />
+                            <div className="relative w-full">
+                                <input value={seg.to} readOnly className="font-bold text-xl text-slate-900 border-b border-dashed border-slate-200 bg-gray-50/50 w-full cursor-not-allowed focus:outline-none"/>
+                                <Lock size={12} className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-300"/>
+                            </div>
                         </div>
                     </div>
                     
@@ -302,7 +324,7 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
         ))}
       </div>
 
-      {/* 2. CITY-WISE DETAILS (Hotel, Cab, Expenses) */}
+      {/* 2. CITY-WISE SERVICES */}
       <div className="space-y-6 pt-6">
         <div className="flex justify-between items-end border-b border-gray-200 pb-3">
             <h3 className="font-bold text-slate-800 flex items-center gap-3 text-base">
@@ -318,13 +340,13 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
             return (
                 <div key={i} className="p-6 border border-gray-200 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
                     
-                    {/* Header: City Name */}
+                    {/* Header: City Name (LOCKED) */}
                     <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
                           <h4 className="font-bold text-slate-900 text-lg flex items-center gap-2">
                             <MapPin size={20} className="text-orange-500"/> {city}
+                            <Lock size={14} className="text-gray-300" />
                           </h4>
                           
-                          {/* HOTEL TOGGLE */}
                           <label className="flex items-center gap-3 cursor-pointer select-none bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 hover:border-orange-200 transition-colors">
                             <span className={`text-xs font-bold uppercase tracking-wider ${hotel.bookingStatus === 'Book Later' ? 'text-orange-600' : 'text-slate-400'}`}>
                                 {hotel.bookingStatus === 'Book Later' ? 'No Hotel / Book Later' : 'Hotel Required'}
@@ -336,7 +358,7 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
                           </label>
                     </div>
 
-                    {/* HOTEL SECTION (Optional) */}
+                    {/* HOTEL FORM */}
                     {hotel.bookingStatus === 'Confirmed' ? (
                         <div className="animate-fade-in space-y-6 mb-8">
                             <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><CheckSquare size={14}/> Hotel Details</h5>
@@ -374,38 +396,27 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
                     ) : (
                         <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 text-amber-800 text-sm font-medium flex items-center gap-3 mb-8">
                             <Clock size={18} className="shrink-0" /> 
-                            <span>Hotel booking skipped/deferred for {city}.</span>
+                            <span>Hotel booking skipped/deferred for this location.</span>
                         </div>
                     )}
 
-                    {/* CAB & EXPENSES (ALWAYS VISIBLE - OPTIONAL) */}
+                    {/* CAB & EXTRAS */}
                     <div className="pt-6 border-t border-dashed border-gray-200">
                         <div className="flex justify-between items-center mb-4">
                             <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><Car size={14}/> Local Travel & Extras</h5>
-                            {/* CAB TOGGLE */}
-                            <button 
-                                onClick={() => handleCabToggle(i)}
-                                className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold transition-all border ${isCabRequired ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
-                            >
-                                {isCabRequired ? <CheckSquare size={12}/> : <Plus size={12}/>} 
-                                {isCabRequired ? 'Cab Added' : 'Add Cab'}
+                            <button onClick={() => handleCabToggle(i)} className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold transition-all border ${isCabRequired ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+                                {isCabRequired ? <CheckSquare size={12}/> : <Plus size={12}/>} {isCabRequired ? 'Cab Added' : 'Add Cab'}
                             </button>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Cab Form - Only Show if Required */}
                             {isCabRequired ? (
                                 <div className="space-y-3 animate-fade-in bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                                     <div className="flex justify-between">
                                         <label className="text-xs font-bold text-blue-700 uppercase">Cab Details</label>
                                         <button onClick={() => handleCabToggle(i)} className="text-blue-400 hover:text-blue-600"><X size={12}/></button>
                                     </div>
-                                    <input 
-                                        placeholder="Remarks (e.g. Airport Transfer)"
-                                        value={cab[i]?.remarks || ''}
-                                        onChange={(e) => handleExpenseChange(i, 'cab', 'remarks', e.target.value)}
-                                        className="w-full h-10 px-3 bg-white border border-blue-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
+                                    <input placeholder="Remarks (e.g. Airport Transfer)" value={cab[i]?.remarks || ''} onChange={(e) => handleExpenseChange(i, 'cab', 'remarks', e.target.value)} className="w-full h-10 px-3 bg-white border border-blue-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"/>
                                     <div className="flex gap-3">
                                         <div className="relative w-1/2">
                                             <IndianRupee size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300"/>
@@ -420,7 +431,6 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
                                 </div>
                             )}
 
-                            {/* Other Expenses (Always visible) */}
                             <div className="space-y-3 p-4">
                                 <h5 className="text-xs font-bold text-slate-400 uppercase">Other Expenses</h5>
                                 <input placeholder="Description (e.g. Food/Laundry)" value={other[i]?.description || ''} onChange={(e) => handleExpenseChange(i, 'other', 'description', e.target.value)} className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-pink-500"/>

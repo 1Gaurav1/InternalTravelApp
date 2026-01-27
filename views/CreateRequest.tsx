@@ -41,7 +41,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
   // --- UI States ---
   const [tripType, setTripType] = useState<'oneway' | 'return' | 'multicity'>('return');
   const [cabRequired, setCabRequired] = useState(false);
-  const [stayRequired, setStayRequired] = useState(false); // <--- NEW STATE
+  const [stayRequired, setStayRequired] = useState(false); 
   const [fromLocation, setFromLocation] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -91,7 +91,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
             setTripType(parsed.tripType);
             setFromLocation(parsed.fromLocation);
             setCabRequired(parsed.cabRequired);
-            setStayRequired(parsed.stayRequired || false); // <--- LOAD NEW STATE
+            setStayRequired(parsed.stayRequired || false); 
             toast.success("Draft restored from last session");
         } catch (e) {
             console.error("Failed to load draft", e);
@@ -106,7 +106,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
         tripType,
         fromLocation,
         cabRequired,
-        stayRequired // <--- SAVE NEW STATE
+        stayRequired 
     };
     localStorage.setItem('travel_request_draft', JSON.stringify(draftData));
     toast.success("Draft saved successfully!");
@@ -119,30 +119,43 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
     }
   }
 
-  // --- Helpers ---
-  const convertTo24 = (t: string) => {
-    if (!t) return '';
+  // --- Helpers (FIXED for Time Comparisons) ---
+  const convertToMinutes = (t: string) => {
+    if (!t) return -1;
     const [time, mod] = t.split(' ');
     let [h, m] = time.split(':');
-    if (mod === 'PM' && h !== '12') h = String(Number(h) + 12);
-    if (mod === 'AM' && h === '12') h = '00';
-    return `${h}:${m}`;
+    let hours = parseInt(h);
+    const minutes = parseInt(m);
+    
+    if (mod === 'PM' && hours !== 12) hours += 12;
+    if (mod === 'AM' && hours === 12) hours = 0;
+    
+    return hours * 60 + minutes;
   };
 
+  // Compare two date-time points (Allows overnight travel)
   const compare = (d1: string, t1: string, d2: string, t2: string) => {
-    if (!t1 || !t2) return true; 
-    return new Date(`${d1}T${convertTo24(t1)}`) <= new Date(`${d2}T${convertTo24(t2)}`);
+    if (!d1 || !d2) return true; 
+    
+    const date1 = new Date(d1);
+    const date2 = new Date(d2);
+
+    // If End Date is after Start Date, ANY time is valid
+    if (date2 > date1) return true;
+
+    // If End Date is before Start Date, Invalid
+    if (date2 < date1) return false;
+
+    // If Dates are SAME, End Time must be >= Start Time
+    if (t1 && t2) {
+        return convertToMinutes(t2) >= convertToMinutes(t1);
+    }
+    return true;
   };
 
   const formatDate = (d: string) => {
     if (!d) return 'Select Date';
     return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
-
-  const getFilteredTimeSlots = (compareTime: string, isSameDay: boolean) => {
-    if (!isSameDay || !compareTime) return timeSlots;
-    const compare24 = convertTo24(compareTime);
-    return timeSlots.filter(slot => convertTo24(slot) > compare24);
   };
 
   // --- Multi City Logic ---
@@ -200,9 +213,9 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
       if (!formData.destination) { toast.error("Please enter a destination (To)"); return; }
       if (!formData.startDate) { toast.error("Please select a date"); return; }
       
-      if (!compare(formData.startDate, formData.startStartTime, formData.startDate, formData.startEndTime)) {
-        toast.error("Invalid time range"); return;
-      }
+      // FIX: Only check time range if provided (Start < End logic removed for preference window)
+      // We assume user can say "Between 9 PM and 2 AM" (Overnight preference)
+      // Just check if Start is provided if End is provided? No, allow any.
 
       notesBuilder += `\nOrigin: ${fromLocation}`;
       finalEndDate = formData.startDate;
@@ -216,22 +229,18 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
       if (!formData.startDate) { toast.error("Please select a start date"); return; }
       if (!formData.endDate) { toast.error("Please select an end date"); return; }
 
-      if (!compare(formData.startDate, formData.startStartTime, formData.startDate, formData.startEndTime)) {
-        toast.error("Invalid start time range"); return;
+      // Date Check Only (Return Date < Start Date is invalid)
+      if (new Date(formData.endDate) < new Date(formData.startDate)) {
+          toast.error("Return date cannot be before departure date"); return;
       }
-      if (!compare(formData.endDate, formData.endStartTime, formData.endDate, formData.endEndTime)) {
-        toast.error("Invalid return time range"); return;
-      }
-      if (formData.startDate === formData.endDate) {
-         if (formData.startStartTime && formData.endStartTime) {
-             if (convertTo24(formData.endStartTime) <= convertTo24(formData.startStartTime)) {
-                 toast.error("For same-day travel, Return time cannot be before Start time.");
-                 return;
-             }
-         }
-      }
-      if (!compare(formData.startDate, formData.startEndTime, formData.endDate, formData.endStartTime)) {
-        toast.error("End date cannot be earlier than start date"); return;
+
+      // Special Check: Same Day Return flight cannot be before Start Flight
+      if (formData.startDate === formData.endDate && formData.startStartTime && formData.endStartTime) {
+           // Allow leeway, but generally return shouldn't be BEFORE start
+           // Using compare which handles time conversion
+           if (!compare(formData.startDate, formData.startStartTime, formData.endDate, formData.endStartTime)) {
+               toast.error("Return time cannot be before Start time on the same day"); return;
+           }
       }
 
       notesBuilder += `\nOrigin: ${fromLocation}`;
@@ -244,9 +253,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
         if (!seg.from || !seg.to || !seg.date) {
           toast.error(`Please complete all fields for Trip Segment ${i + 1}`); return;
         }
-        if (!compare(seg.date, seg.preferredStartTime, seg.date, seg.preferredEndTime)) {
-          toast.error(`Invalid time range in Segment ${i + 1}`); return;
-        }
+        
+        // Date Sequence check
         if (i > 0) {
           const prev = segments[i-1];
           if (new Date(seg.date) < new Date(prev.date)) {
@@ -699,19 +707,13 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                       <div className="md:col-span-4">
                         <label className="text-xs font-bold text-gray-400 uppercase mb-2 block tracking-wider">Pref. Start Time</label>
                         <div className="relative">
-                          {/* SMART FILTERING APPLIED HERE */}
                           <select
                             value={formData.endStartTime}
                             onChange={(e) => setFormData({...formData, endStartTime: e.target.value})}
                             className="w-full bg-gray-50 border-0 ring-1 ring-gray-200 rounded-xl pl-4 pr-10 py-3.5 appearance-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-gray-900 font-medium transition-all"
                           >
                             <option value="">Any Time</option>
-                            {getFilteredTimeSlots(
-                                formData.startStartTime, 
-                                formData.startDate === formData.endDate
-                            ).map(t => (
-                                <option key={t} value={t}>{t}</option>
-                            ))}
+                            {timeSlots.map(t => <option key={t}>{t}</option>)}
                           </select>
                           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
@@ -820,18 +822,18 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                <Info size={18} className="text-primary-600"/> Request Summary
              </h3>
              <div className="space-y-6">
-                
-                {/* 1. Trip Type */}
-                <div className="flex items-start gap-3">
+               
+               {/* 1. Trip Type */}
+               <div className="flex items-start gap-3">
                    <div className="mt-0.5 bg-gray-100 p-1.5 rounded-lg"><Briefcase size={16} className="text-gray-500"/></div>
                    <div>
                       <p className="text-xs text-gray-400 uppercase font-bold tracking-wider">Trip Type</p>
                       <p className="text-gray-900 font-bold capitalize">{tripType === 'multicity' ? 'Multi-City' : tripType + ' Trip'}</p>
                    </div>
-                </div>
+               </div>
 
-                {/* 2. Route (Dynamic) */}
-                {tripType !== 'multicity' ? (
+               {/* 2. Route (Dynamic) */}
+               {tripType !== 'multicity' ? (
                    (fromLocation || formData.destination) && (
                      <div className="flex items-start gap-3 animate-fade-in">
                        <div className="mt-0.5 bg-gray-100 p-1.5 rounded-lg"><MapPin size={16} className="text-gray-500"/></div>
@@ -843,8 +845,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                         </div>
                      </div>
                    )
-                ) : (
-                    <div className="flex items-start gap-3 animate-fade-in">
+               ) : (
+                   <div className="flex items-start gap-3 animate-fade-in">
                        <div className="mt-0.5 bg-gray-100 p-1.5 rounded-lg"><GitMerge size={16} className="text-gray-500"/></div>
                         <div>
                           <p className="text-xs text-gray-400 uppercase font-bold tracking-wider">Itinerary</p>
@@ -853,53 +855,53 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onNavigate, onCreate, cur
                           </p>
                         </div>
                      </div>
-                )}
+               )}
 
-                {/* 3. Dates & Time (Dynamic) */}
-                {tripType !== 'multicity' && formData.startDate && (
-                   <div className="flex items-start gap-3 animate-fade-in">
-                     <div className="mt-0.5 bg-gray-100 p-1.5 rounded-lg"><Calendar size={16} className="text-gray-500"/></div>
-                      <div>
-                        <p className="text-xs text-gray-400 uppercase font-bold tracking-wider">Schedule</p>
-                        <p className="text-gray-900 font-semibold text-sm">
-                           {formatDate(formData.startDate)}
-                           {tripType === 'return' && formData.endDate && ` — ${formatDate(formData.endDate)}`}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                          <Clock size={10} /> {formData.startStartTime || 'Any'} {tripType === 'return' ? ' (Onward)' : ''}
-                        </p>
-                        {tripType === 'return' && formData.endStartTime && (
-                          <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
-                            <Clock size={10} /> {formData.endStartTime} (Return)
-                          </p>
-                        )}
-                      </div>
-                   </div>
-                )}
-                {/* Multi City Dates */}
-                {tripType === 'multicity' && segments[0].date && (
-                   <div className="flex items-start gap-3 animate-fade-in">
-                     <div className="mt-0.5 bg-gray-100 p-1.5 rounded-lg"><Calendar size={16} className="text-gray-500"/></div>
-                      <div>
-                        <p className="text-xs text-gray-400 uppercase font-bold tracking-wider">Date Range</p>
-                        <p className="text-gray-900 font-semibold text-sm">
-                           {formatDate(segments[0].date)} — {formatDate(segments[segments.length-1].date)}
-                        </p>
-                      </div>
-                   </div>
-                )}
+               {/* 3. Dates & Time (Dynamic) */}
+               {tripType !== 'multicity' && formData.startDate && (
+                  <div className="flex items-start gap-3 animate-fade-in">
+                    <div className="mt-0.5 bg-gray-100 p-1.5 rounded-lg"><Calendar size={16} className="text-gray-500"/></div>
+                     <div>
+                       <p className="text-xs text-gray-400 uppercase font-bold tracking-wider">Schedule</p>
+                       <p className="text-gray-900 font-semibold text-sm">
+                          {formatDate(formData.startDate)}
+                          {tripType === 'return' && formData.endDate && ` — ${formatDate(formData.endDate)}`}
+                       </p>
+                       <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                         <Clock size={10} /> {formData.startStartTime || 'Any'} {tripType === 'return' ? ' (Onward)' : ''}
+                       </p>
+                       {tripType === 'return' && formData.endStartTime && (
+                         <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
+                           <Clock size={10} /> {formData.endStartTime} (Return)
+                         </p>
+                       )}
+                     </div>
+                  </div>
+               )}
+               {/* Multi City Dates */}
+               {tripType === 'multicity' && segments[0].date && (
+                  <div className="flex items-start gap-3 animate-fade-in">
+                    <div className="mt-0.5 bg-gray-100 p-1.5 rounded-lg"><Calendar size={16} className="text-gray-500"/></div>
+                     <div>
+                       <p className="text-xs text-gray-400 uppercase font-bold tracking-wider">Date Range</p>
+                       <p className="text-gray-900 font-semibold text-sm">
+                          {formatDate(segments[0].date)} — {formatDate(segments[segments.length-1].date)}
+                       </p>
+                     </div>
+                  </div>
+               )}
 
-                {/* 4. Add-ons */}
-                {(cabRequired || stayRequired) && (
-                   <div className="flex items-start gap-3 animate-fade-in pt-4 border-t border-gray-50">
-                     <div className="mt-0.5 bg-green-50 p-1.5 rounded-lg"><CheckCircle2 size={16} className="text-green-600"/></div>
-                      <div>
-                        <p className="text-xs text-gray-400 uppercase font-bold tracking-wider">Add-ons</p>
-                        {cabRequired && <p className="text-gray-900 font-semibold text-sm">Cab Requested</p>}
-                        {stayRequired && <p className="text-gray-900 font-semibold text-sm">Hotel Requested</p>}
-                      </div>
-                   </div>
-                )}
+               {/* 4. Add-ons */}
+               {(cabRequired || stayRequired) && (
+                  <div className="flex items-start gap-3 animate-fade-in pt-4 border-t border-gray-50">
+                    <div className="mt-0.5 bg-green-50 p-1.5 rounded-lg"><CheckCircle2 size={16} className="text-green-600"/></div>
+                     <div>
+                       <p className="text-xs text-gray-400 uppercase font-bold tracking-wider">Add-ons</p>
+                       {cabRequired && <p className="text-gray-900 font-semibold text-sm">Cab Requested</p>}
+                       {stayRequired && <p className="text-gray-900 font-semibold text-sm">Hotel Requested</p>}
+                     </div>
+                  </div>
+               )}
 
              </div>
 

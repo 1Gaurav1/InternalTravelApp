@@ -58,8 +58,9 @@ export interface HotelBookingDetails {
   checkOut: string;
   cost: number;
   agentFee: number;
-  bookingStatus: 'Confirmed' | 'Book Later'; 
+  bookingStatus: 'Confirmed' | 'Book Later' | 'Pending';
   bookingFile?: string; // Upload Hotel Voucher PDF
+  location?: string;
 }
 
 export interface CabBookingDetails {

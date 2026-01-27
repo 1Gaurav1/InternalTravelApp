@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { TravelRequest, RequestStatus, CostBreakdown } from '../types';
 import { 
   Plane, Calendar, MapPin, CheckCircle, Clock, Send, 
-  MessageCircle, MessageSquare, Eye, FileText, X, User, Briefcase, ArrowRight, Car, Building, History, Layers 
+  MessageCircle, MessageSquare, Eye, FileText, X, User, Briefcase,Repeat, Shuffle, ArrowRight, Car, Building, History, Layers, Download
 } from 'lucide-react';
 import BookingCompletionForm from '../components/BookingCompletionForm';
+import { toast } from 'react-hot-toast';
 
 interface TravelAgentDashboardProps {
   requests: TravelRequest[];
@@ -49,6 +50,7 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
     const updatedNotes = `${existingNotes}\n\n--- [Agent Options Sent: ${timestamp}] ---\n${planDetails}`;
     onUpdateStatus(selectedRequest.id, 'Action Required', updatedNotes);
     setActionModalOpen(false);
+    toast.success("Options sent to employee successfully");
   };
 
   const handleBookingConfirm = (details: CostBreakdown, total: number) => {
@@ -57,12 +59,41 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
     const summaryNote = `Booking Confirmed.\nTotal Cost: ₹${total}\nSegments: ${segmentCount}`;
     onUpdateStatus(selectedRequest.id, 'Booked', summaryNote, details, total);
     setActionModalOpen(false);
+    toast.success("Booking finalized and sent to Manager for approval");
   };
 
   const handleAgentShare = (req: TravelRequest) => {
     const message = `Hello ${req.employeeName}, regarding your trip to ${req.destination}. Please check the portal for updates.`;
     const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
+  };
+
+  // --- EXPORT FUNCTION ---
+  const exportToCSV = () => {
+      const headers = ['Request ID', 'Employee', 'Department', 'Type', 'Destination', 'Start Date', 'End Date', 'Status', 'Total Cost'];
+      const rows = requests.map(req => [
+          req.id,
+          req.employeeName,
+          req.department,
+          req.type,
+          `"${req.destination}"`, // Quote to handle commas in cities
+          req.startDate,
+          req.endDate,
+          req.status,
+          req.amount || 0
+      ]);
+
+      const csvContent = "data:text/csv;charset=utf-8," 
+          + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `travel_requests_export_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Report downloaded successfully");
   };
 
   // --- HELPERS ---
@@ -91,21 +122,25 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
   const cleanNotesDisplay = (notes: string) => {
       if (!notes) return "No details provided.";
       // Regex to find "City, State" patterns and replace with just "City"
-      // Looks for Word, Word -> Word, Word
       return notes.replace(/([a-zA-Z\s]+),\s[a-zA-Z\s&]+/g, "$1");
   };
 
-  // --- TIMELINE PARSER ---
+  // --- TIMELINE PARSER (FIXED FOR DUPLICATES) ---
   const getFullTimeline = (req: TravelRequest) => {
+    // 1. If Booking Details Exist (Use actual booked segments)
     if (req.bookingDetails?.flights?.length) {
        const nodes: any[] = [];
        const flights = req.bookingDetails.flights;
+       
+       // Add Origin
        nodes.push({
            city: cleanCityName(flights[0].from),
            date: formatDate(flights[0].departureTime),
            time: formatTime(flights[0].departureTime),
            status: 'Start'
        });
+
+       // Add Destinations
        flights.forEach((f: any, idx: number) => {
            nodes.push({
                city: cleanCityName(f.to),
@@ -117,45 +152,52 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
        return nodes;
     }
 
-    const multiCityMatches = [...(req.agentNotes?.matchAll(/\d+\.\s*(.*?)\s*->\s*(.*?)\s*\|\s*([\d-]+)/g) || [])];
+    // 2. Parse from Notes (Multi-City Regex)
+    const multiCityMatches = [...(req.agentNotes?.matchAll(/(\d+\.)?\s*([a-zA-Z\s]+)(?:,[^->]+)?\s*->\s*([a-zA-Z\s]+)(?:,[^|]+)?/g) || [])];
+    
     if (multiCityMatches.length > 0) {
         const nodes: any[] = [];
+        // Origin
         nodes.push({
-            city: cleanCityName(multiCityMatches[0][1]), 
-            date: formatDate(multiCityMatches[0][3]), 
+            city: cleanCityName(multiCityMatches[0][2]), 
+            date: formatDate(req.startDate), 
             time: req.startTime || 'TBA', 
             status: 'Start'
         });
+        
+        // Destinations
         multiCityMatches.forEach((match, i) => {
-            const isLast = i === multiCityMatches.length - 1;
-            const nextLegDate = multiCityMatches[i+1]?.[3]; 
             nodes.push({
-                city: cleanCityName(match[2]), 
-                date: formatDate(nextLegDate || match[3]), 
-                time: isLast ? (req.endTime || 'TBA') : 'TBA',
-                status: isLast ? 'End' : 'Stop'
+                city: cleanCityName(match[3]), 
+                date: '... ', 
+                time: 'TBA',
+                status: i === multiCityMatches.length - 1 ? 'End' : 'Stop'
             });
         });
         return nodes;
     }
 
+    // 3. Fallback: One-Way or Return
     const originMatch = req.agentNotes?.match(/(?:Origin|From):\s*(.*?)(\n|$)/i);
     let startCity = originMatch ? cleanCityName(originMatch[1]) : '';
-    const dests = req.destination.split(',').map(cleanCityName);
+    const dest = cleanCityName(req.destination);
     
-    if (!startCity) startCity = "Start"; 
+    // Check if Return Trip
+    const isReturn = req.agentNotes?.toLowerCase().includes('return') || req.agentNotes?.toLowerCase().includes('round trip');
 
-    const simpleNodes = [
-        { city: startCity, date: formatDate(req.startDate), time: req.startTime || 'TBA', status: 'Start' },
-        ...dests.map((d, i) => ({
-            city: d,
-            date: i === dests.length - 1 ? formatDate(req.endDate) : 'Stopover', 
-            time: i === dests.length - 1 ? (req.endTime || 'TBA') : 'TBA',
-            status: i === dests.length - 1 ? 'End' : 'Stop'
-        }))
-    ];
+    const simpleNodes = [];
+    
+    // Node 1: Start
+    simpleNodes.push({ city: startCity || "Start", date: formatDate(req.startDate), time: req.startTime || 'TBA', status: 'Start' });
+    
+    // Node 2: Destination
+    simpleNodes.push({ city: dest, date: formatDate(req.endDate), time: isReturn ? 'Stay' : 'End', status: isReturn ? 'Stop' : 'End' });
 
-    if (simpleNodes[0].city === simpleNodes[1].city) return simpleNodes.slice(1);
+    // Node 3: Return (If applicable)
+    if (isReturn) {
+        simpleNodes.push({ city: startCity || "Start", date: formatDate(req.endDate), time: req.endTime || 'TBA', status: 'End' });
+    }
+
     return simpleNodes;
   };
 
@@ -169,6 +211,11 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
            <p className="text-gray-500 mt-1">Manage bookings, flight options, and tickets.</p>
         </div>
         <div className="flex gap-3">
+            {/* EXPORT BUTTON */}
+            <button onClick={exportToCSV} className="bg-white px-4 py-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-2 hover:bg-gray-50 text-sm font-bold text-gray-700 transition-colors">
+                <Download size={16} className="text-gray-500"/> Export Report
+            </button>
+
             <div className="bg-white px-4 py-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
                 <span className="flex h-2.5 w-2.5 rounded-full bg-pink-500 animate-pulse"></span>
                 <span className="text-sm font-bold text-gray-700">{processingRequests.length} To Process</span>
@@ -217,7 +264,7 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
                             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 mb-4 grid grid-cols-2 gap-4">
                                 <div>
                                     <p className="text-xs text-gray-400 uppercase font-bold">Destination</p>
-                                    <p className="font-bold text-gray-900 text-sm">{req.destination}</p>
+                                    <p className="font-bold text-gray-900 text-sm">{cleanCityName(req.destination)}</p>
                                 </div>
                                 <div>
                                     <p className="text-xs text-gray-400 uppercase font-bold">Dates</p>
@@ -256,7 +303,7 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
                              <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h4 className="font-bold text-gray-900 text-sm">{req.employeeName}</h4>
-                                    <p className="text-xs text-gray-500">Trip to {req.destination}</p>
+                                    <p className="text-xs text-gray-500">Trip to {cleanCityName(req.destination)}</p>
                                 </div>
                                 <button onClick={() => handleAgentShare(req)} className="text-green-600 bg-green-50 p-2 rounded-lg hover:bg-green-100 transition-colors">
                                     <MessageCircle size={16}/>
@@ -290,14 +337,47 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
                                 <span className="bg-white/10 text-white px-2 py-0.5 rounded text-xs font-medium border border-white/20">{viewingRequest.department}</span>
                             </div>
                             <div className="flex items-center gap-4 text-sm text-gray-300">
-                                <span className="flex items-center gap-1"><MapPin size={12}/> {viewingRequest.destination}</span>
+                                <span className="flex items-center gap-1"><MapPin size={12}/> {cleanCityName(viewingRequest.destination)}</span>
                                 <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
                                 <span className="flex items-center gap-1"><Clock size={12}/> ID: {viewingRequest.id}</span>
                             </div>
                         </div>
                     </div>
-                    <button onClick={() => setViewingRequest(null)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full text-white transition-colors"><X size={20}/></button>
+
+                    {/* RIGHT SIDE: Trip Type Badge + Close Button */}
+                    <div className="flex items-center gap-3">
+                        <span className={`px-4 py-2 rounded-full text-xs font-bold border flex items-center gap-2 shadow-sm uppercase tracking-wide ${
+                            (viewingRequest.agentNotes?.toLowerCase().includes('multi city')) 
+                            ? 'bg-purple-500/20 text-purple-100 border-purple-500/30' 
+                            : (viewingRequest.startDate !== viewingRequest.endDate || viewingRequest.agentNotes?.toLowerCase().includes('return'))
+                            ? 'bg-indigo-500/20 text-indigo-100 border-indigo-500/30'
+                            : 'bg-blue-500/20 text-blue-100 border-blue-500/30'
+                        }`}>
+                             {(() => {
+                                 const notes = viewingRequest.agentNotes?.toLowerCase() || '';
+                                 
+                                 // 1. Check Multi-City
+                                 if (notes.includes('multi city') || (viewingRequest.agentNotes?.includes('->') && !notes.includes('origin'))) {
+                                     return <><Shuffle size={14}/> Multi-City</>;
+                                 } 
+                                 
+                                 // 2. Check Return (If Notes say Return OR Dates are different)
+                                 // Logic: If start != end, it implies a duration/stay, hence Round Trip.
+                                 if (notes.includes('return') || notes.includes('round trip') || viewingRequest.startDate !== viewingRequest.endDate) {
+                                     return <><Repeat size={14}/> Round Trip</>;
+                                 }
+                                 
+                                 // 3. Default to One Way
+                                 return <><ArrowRight size={14}/> One-Way</>;
+                             })()}
+                        </span>
+
+                        <button onClick={() => setViewingRequest(null)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full text-white transition-colors">
+                            <X size={20}/>
+                        </button>
+                    </div>
                 </div>
+                
 
                 <div className="p-8 overflow-y-auto bg-gray-50 flex-1">
                     
@@ -469,7 +549,7 @@ const TravelAgentDashboard: React.FC<TravelAgentDashboardProps> = ({ requests, o
                         <div className="space-y-4">
                             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
                                 <p className="text-xs font-bold text-blue-700 uppercase mb-1">Trip Details</p>
-                                <p className="text-sm text-blue-900">To: <strong>{selectedRequest?.destination}</strong> | Pref: {selectedRequest?.preferredFlight || "None"}</p>
+                                <p className="text-sm text-blue-900">To: <strong>{cleanCityName(selectedRequest?.destination || '')}</strong> | Pref: {selectedRequest?.preferredFlight || "None"}</p>
                             </div>
                             <textarea 
                                 className="w-full h-40 p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm font-mono transition-all resize-none"

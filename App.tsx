@@ -13,8 +13,9 @@ import MyRequests from './views/MyRequests';
 import TravelAgentDashboard from './views/TravelAgentDashboard';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
-import { Toaster } from "react-hot-toast";
+import { Toaster, toast } from "react-hot-toast";
 import TravelOptions from "./views/TravelOptions";
+import ProfileSettings from './views/ProfileSettings';
 
 const App: React.FC = () => {
   // Stats state
@@ -194,7 +195,25 @@ const App: React.FC = () => {
          console.error("Failed to delete", e);
     }
   };
+ const handleUpdateProfile = async (updatedUser: any) => {
+      try {
+          // 1. Save to DATABASE first (The Source of Truth)
+          // We check if the API method exists, then call it
+          if ((api as any).updateUser) {
+             await (api as any).updateUser(updatedUser); 
+          }
+          
+          // 2. If DB save is successful, update the UI (Local State)
+          setCurrentUser(updatedUser);
+          localStorage.setItem("user", JSON.stringify(updatedUser));
 
+          toast.success("Profile saved to database successfully!");
+      } catch (error) {
+          // 3. If DB fails, do NOT update the UI
+          console.error("Database update failed", error);
+          toast.error("Failed to save changes to the database.");
+      }
+  };
   const handleLogin = (user: User) => {
     const userWithRoleArray = {
         ...user,
@@ -296,6 +315,20 @@ const App: React.FC = () => {
                   onNavigate={handleNavigate}
                   requests={requests}
                   stats={stats}
+                />
+              )}
+
+              {currentView === ViewState.PROFILE_SETTINGS && (
+                <ProfileSettings 
+                  user={currentUser} 
+                  onSave={(updated) => {
+                     // Update local state immediately
+                     setCurrentUser(updated);
+                     localStorage.setItem("user", JSON.stringify(updated));
+                     // Switch back to dashboard
+                     setCurrentView(ViewState.EMPLOYEE_DASHBOARD); 
+                  }} 
+                  onCancel={() => setCurrentView(ViewState.EMPLOYEE_DASHBOARD)} 
                 />
               )}
 

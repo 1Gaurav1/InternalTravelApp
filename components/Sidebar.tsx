@@ -11,7 +11,8 @@ import {
   BarChart3,
   Briefcase,
   X,
-  ShieldCheck
+  ShieldCheck,
+  Settings // <--- 1. ADDED IMPORT
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -28,26 +29,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, us
   
   const roles = Array.isArray(userRole) ? userRole : [userRole];
 
-  // --- 1. SHARED MENUS ---
-  // Commented out as requested
-  // const personalTravelMenu = [
-  //   { view: ViewState.CREATE_REQUEST, label: 'New Trip', icon: PlusCircle },
-  //   { view: ViewState.MY_REQUESTS, label: 'My Trips', icon: Plane },
-  // ];
-
-  // --- 2. ROLE SPECIFIC MENUS ---
-  
+  // --- MENU DEFINITIONS (Same as before) ---
   const employeeMenu = [
     { view: ViewState.EMPLOYEE_DASHBOARD, label: 'Dashboard', icon: LayoutDashboard },
     { view: ViewState.CREATE_REQUEST, label: 'New Trip', icon: PlusCircle },
     { view: ViewState.MY_REQUESTS, label: 'My Trips', icon: Plane },
-    // ...personalTravelMenu
   ];
 
   const managerMenu = [
     { view: ViewState.MANAGER_DASHBOARD, label: 'Manager Console', icon: LayoutDashboard },
-    { view: ViewState.APPROVAL_LIST, label: 'Team Approvals', icon: FileCheck },
-    // ...personalTravelMenu
+    // { view: ViewState.APPROVAL_LIST, label: 'Team Approvals', icon: FileCheck },
   ];
 
   const adminMenu = [
@@ -59,16 +50,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, us
     ...(roles.includes(UserRole.SUPER_ADMIN) ? [
         { view: ViewState.USER_MANAGEMENT, label: 'User Management', icon: Users },
     ] : []),
-    // ...personalTravelMenu
   ];
 
   const agentMenu = [
     { view: ViewState.TRAVEL_AGENT_DASHBOARD, label: 'Agent Console', icon: Briefcase },
-    // { view: ViewState.ADMIN_REPORTS, label: 'All Bookings', icon: List }, 
-    // ...personalTravelMenu
   ];
 
-  // --- 3. MENU SELECTION LOGIC ---
+  // --- MENU SELECTION LOGIC ---
   let menuItems = employeeMenu;
   let roleLabel = 'Employee Portal';
 
@@ -140,6 +128,19 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, us
 
         <div className="p-4">
           <button 
+            onClick={() => onNavigate(ViewState.PROFILE_SETTINGS)}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors mb-2 ${
+               currentView === ViewState.PROFILE_SETTINGS 
+               ? 'bg-primary-50 text-primary-600' 
+               : 'text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            <Settings size={20} />
+            <span>Profile Settings</span>
+          </button>
+
+
+          <button 
             onClick={onLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 font-medium transition-colors mb-2"
           >
@@ -147,7 +148,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, us
             <span>Log Out</span>
           </button>
           
-          <div className="flex items-center gap-3 px-4 py-2">
+          <div className="flex items-center gap-3 px-4 py-2 border-t border-gray-100 pt-4">
             <img 
                 src={currentUser?.avatar || `https://ui-avatars.com/api/?name=${currentUser?.name || 'User'}`} 
                 alt="Profile" 

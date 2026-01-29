@@ -75,7 +75,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
 
   const totalSpend = chartData.reduce((sum, item) => item.name === 'No Data' ? 0 : sum + item.value, 0);
 
-  // --- FORMATTING HELPERS ---
+  // --- FORMATTING HELPERS (MATCHING MYREQUEST) ---
   const formatDate = (dateString: string) => {
     if (!dateString || dateString === 'Invalid Date') return '--/--';
     return new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -86,7 +86,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
     return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // --- STRICT CITY CLEANER ---
+  // --- STRICT CITY CLEANER (MATCHING MYREQUEST) ---
   const cleanCityName = (name: string) => {
       if (!name) return "";
       let cleaned = name.split(',')[0].trim();
@@ -101,7 +101,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
       return notes.replace(/([a-zA-Z\s]+),\s[a-zA-Z\s&]+/g, "$1");
   };
 
-  // --- TIMELINE PARSER (VISUAL LOGIC) ---
+  // --- TIMELINE PARSER (EXACTLY MATCHING MYREQUEST) ---
   const getFullTimeline = (req: TravelRequest) => {
     // 1. If Booked, use exact flight data
     if (req.bookingDetails?.flights?.length) {
@@ -457,7 +457,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
                             <div className="flex items-center gap-4 text-sm text-gray-300">
                                 <span className="flex items-center gap-1"><MapPin size={12}/> {cleanCityName(viewingRequest.destination)}</span>
                                 <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
-                                <span className="flex items-center gap-1"><Clock size={12}/> ID: {viewingRequest.id}</span>
+                                <span className="flex items-center gap-1">ID: {viewingRequest.id}</span>
                             </div>
                         </div>
                     </div>
@@ -551,21 +551,23 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ onNavigate, onViewR
                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><FileText size={12}/> Requirements</label>
                                 <p className="text-xs text-gray-600 font-medium whitespace-pre-wrap">{cleanNotesDisplay(viewingRequest.agentNotes || "No notes.")}</p>
                             </div>
-                            <div className="bg-gray-900 text-white p-6 rounded-2xl shadow-xl">
-                                <div className="flex items-center gap-2 mb-4 opacity-80">
-                                    <TrendingUp size={16}/>
-                                    <span className="text-xs font-bold uppercase tracking-widest">Estimated Cost</span>
-                                </div>
-                                <div className="flex items-end justify-between">
-                                    <div>
-                                        <p className="text-3xl font-black">₹{viewingRequest.amount?.toLocaleString() || '0'}</p>
-                                        <p className="text-xs text-gray-400 mt-1">Budget Impact</p>
+                            {viewingRequest.amount !== undefined && viewingRequest.amount !== null && viewingRequest.amount > 0 && (
+                                <div className="bg-gray-900 text-white p-6 rounded-2xl shadow-xl">
+                                    <div className="flex items-center gap-2 mb-4 opacity-80">
+                                        <TrendingUp size={16}/>
+                                        <span className="text-xs font-bold uppercase tracking-widest">Estimated Cost</span>
                                     </div>
-                                    <span className={`px-2 py-1 rounded text-xs font-bold ${viewingRequest.amount > 50000 ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-green-500/20 text-green-300 border border-green-500/30'}`}>
-                                        {viewingRequest.amount > 50000 ? 'High Value' : 'Standard'}
-                                    </span>
+                                    <div className="flex items-end justify-between">
+                                        <div>
+                                            <p className="text-3xl font-black">₹{viewingRequest.amount.toLocaleString()}</p>
+                                            <p className="text-xs text-gray-400 mt-1">Budget Impact</p>
+                                        </div>
+                                        <span className={`px-2 py-1 rounded text-xs font-bold ${viewingRequest.amount > 50000 ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-green-500/20 text-green-300 border border-green-500/30'}`}>
+                                            {viewingRequest.amount > 50000 ? 'High Value' : 'Standard'}
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 </div>

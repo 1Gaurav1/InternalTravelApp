@@ -81,10 +81,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
       toast.success("Request approved and forwarded to Travel Desk");
   };
 
-  // --- HELPERS ---
+  // --- HELPERS (MATCHING MYREQUEST EXACTLY) ---
   const formatDate = (dateString: string) => {
     if (!dateString) return '--/--';
-    return new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   const formatTime = (dateString?: string) => {
@@ -92,7 +92,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
     return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // --- CLEAN CITY NAME ---
+  // --- STRICT CITY CLEANER (MATCHING MYREQUEST) ---
   const cleanCityName = (name: string) => {
       if (!name) return "";
       let cleaned = name.split(',')[0].trim();
@@ -119,7 +119,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
       return 'One-Way';
   };
 
-  // --- TIMELINE PARSER (VISUAL LOGIC) ---
+  // --- TIMELINE PARSER (EXACTLY MATCHING MYREQUEST) ---
   const getFullTimeline = (req: TravelRequest) => {
     // 1. If Booked, use exact flight data
     if (req.bookingDetails?.flights?.length) {
@@ -410,7 +410,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
         inputRequired={true}
       />
 
-      {/* --- DETAIL MODAL (FIXED OVERLAY) --- */}
+      {/* --- DETAIL MODAL (MATCHING MYREQUEST EXACTLY) --- */}
       {viewingRequest && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in p-4">
             <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[95vh] overflow-hidden relative">
@@ -433,7 +433,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
                             <div className="flex items-center gap-4 text-sm text-gray-300">
                                 <span className="flex items-center gap-1"><MapPin size={12}/> {cleanCityName(viewingRequest.destination)}</span>
                                 <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
-                                <span className="flex items-center gap-1"><Clock size={12}/> ID: {viewingRequest.id}</span>
+                                <span className="flex items-center gap-1">ID: {viewingRequest.id}</span>
                             </div>
                         </div>
                     </div>
@@ -461,7 +461,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
                 {/* Content */}
                 <div className="p-8 overflow-y-auto bg-gray-50 flex-1">
                     
-                    {/* ITINERARY TIMELINE */}
+                    {/* ITINERARY TIMELINE (EXACT MATCH) */}
                     <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-center mb-8">
                         <div className="flex items-center gap-4 overflow-x-auto pb-4 w-full justify-between max-w-3xl">
                             {getFullTimeline(viewingRequest).map((node, i, arr) => {
@@ -523,21 +523,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, requests, o
                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><FileText size={12}/> Requirements</label>
                                 <p className="text-xs text-gray-600 font-medium whitespace-pre-wrap">{cleanNotesDisplay(viewingRequest.agentNotes || "No notes.")}</p>
                             </div>
-                            <div className="bg-gray-900 text-white p-6 rounded-2xl shadow-xl">
-                                <div className="flex items-center gap-2 mb-4 opacity-80">
-                                    <TrendingUp size={16}/>
-                                    <span className="text-xs font-bold uppercase tracking-widest">Estimated Cost</span>
-                                </div>
-                                <div className="flex items-end justify-between">
-                                    <div>
-                                        <p className="text-3xl font-black">₹{viewingRequest.amount?.toLocaleString() || '0'}</p>
-                                        <p className="text-xs text-gray-400 mt-1">Budget Impact</p>
+                            {viewingRequest.amount !== undefined && viewingRequest.amount !== null && viewingRequest.amount > 0 && (
+                                <div className="bg-gray-900 text-white p-6 rounded-2xl shadow-xl">
+                                    <div className="flex items-center gap-2 mb-4 opacity-80">
+                                        <TrendingUp size={16}/>
+                                        <span className="text-xs font-bold uppercase tracking-widest">Estimated Cost</span>
                                     </div>
-                                    <span className={`px-2 py-1 rounded text-xs font-bold ${viewingRequest.amount > 50000 ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-green-500/20 text-green-300 border border-green-500/30'}`}>
-                                        {viewingRequest.amount > 50000 ? 'High Value' : 'Standard'}
-                                    </span>
+                                    <div className="flex items-end justify-between">
+                                        <div>
+                                            <p className="text-3xl font-black">₹{viewingRequest.amount.toLocaleString()}</p>
+                                            <p className="text-xs text-gray-400 mt-1">Budget Impact</p>
+                                        </div>
+                                        <span className={`px-2 py-1 rounded text-xs font-bold ${viewingRequest.amount > 50000 ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-green-500/20 text-green-300 border border-green-500/30'}`}>
+                                            {viewingRequest.amount > 50000 ? 'High Value' : 'Standard'}
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 </div>

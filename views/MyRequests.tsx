@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from "react";
 import { 
-  Search, Filter, Trash2, Plus, 
+  Search, Trash2, Plus, 
   ArrowRight, Calendar, Info, FileText, 
-  User, Briefcase, Plane, Download, Paperclip, X, MapPin, ChevronLeft, ArrowLeft 
+  User, Briefcase, Plane, Download, Paperclip, MapPin, 
+  ArrowLeftRight, Repeat, MoveRight, X, Home, Undo2 
 } from "lucide-react";
 import { TravelRequest, RequestStatus } from "../types";
 import ConfirmationModal from "../components/ConfirmationModal";
@@ -58,22 +59,139 @@ const MyRequests: React.FC<MyRequestsProps> = ({
       return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  // --- STRICT CITY CLEANER (MATCHING MANAGER DASHBOARD) ---
+  const cleanCityName = (name: string) => {
+      if (!name) return "";
+      let cleaned = name.split(',')[0].trim();
+      cleaned = cleaned.replace(/^(Origin:|From:|To:)/i, '').trim();
+      if (cleaned.toLowerCase() === 'origin' || cleaned.toLowerCase() === 'start point') return ''; 
+      return cleaned;
+  };
+
+  const formatCitiesDisplay = (cityData: any) => {
+    try {
+      // For Display in List: Show "A -> B -> C"
+      const rawString = Array.isArray(cityData) ? cityData.join(',') : String(cityData);
+      
+      // Clean and split
+      let cities = rawString.split(/->|,/).map(cleanCityName).filter(Boolean);
+      
+      // If just one city (e.g. "Gangtok"), return it
+      if (cities.length === 1) return cities[0];
+      
+      // If multiple, join with arrows
+      return cities.join(' → ');
+    } catch (e) { return String(cityData); }
+  };
+
+  // --- TIMELINE LOGIC (FIXED) ---
   const getTimelineCities = (req: TravelRequest) => {
+    // 1. If Booked, use actual flight path
     if (req.bookingDetails?.flights?.length) {
        const cities = [req.bookingDetails.flights[0].from];
        req.bookingDetails.flights.forEach(f => cities.push(f.to));
-       return [...new Set(cities)]; 
+       return [...new Set(cities.map(cleanCityName))]; 
     }
-    const multiCityMatches = [...(req.agentNotes?.matchAll(/\d+\.\s*(.*?)\s*->\s*(.*?)\s*\|/g) || [])];
+
+    // 2. Determine Start City
+    let startCity = "Start";
+    const originMatch = req.agentNotes?.match(/(?:Origin|From):\s*(.*?)(\n|$)/i);
+    if (originMatch) {
+        startCity = cleanCityName(originMatch[1]);
+    } else {
+        // Infer from "CityA -> CityB" string in destination
+        const splitArrow = req.destination.split('->');
+        if (splitArrow.length > 1) startCity = cleanCityName(splitArrow[0]);
+    }
+
+    // 3. Determine Destinations Path
+    let destinations: string[] = [];
+    
+    if (req.tripType === 'Multi City') {
+        // FIX: For Multi-City, we MUST split by comma or arrow to get EVERY city
+        // e.g. "Kanpur, Bhilai, Indore" -> ["Kanpur", "Bhilai", "Indore"]
+        destinations = req.destination.split(/->|,/).map(cleanCityName).filter(Boolean);
+    } else {
+        // One Way / Round Trip -> Treat as SINGLE destination (ignore commas inside)
+        destinations = [cleanCityName(req.destination)];
+    }
+    
+    // Remove duplicate start city if it appears at the beginning of destinations
+    // (e.g. User typed "StartCity, CityB" in destination field)
+    if (destinations.length > 0 && destinations[0].toLowerCase() === startCity.toLowerCase()) {
+        if (req.tripType !== 'Round Trip') {
+             destinations.shift();
+        }
+    }
+
+    // 4. Build Final Path
+    if (req.tripType === 'Round Trip') {
+        return [startCity, ...destinations, startCity];
+    } 
+    
+    // One Way or Multi City
+    return [startCity, ...destinations];
+  };
+
+  // --- TIMELINE PARSER (EXACTLY MATCHING MANAGER DASHBOARD) ---
+  const getFullTimeline = (req: TravelRequest) => {
+    // 1. If Booked, use exact flight data
+    if (req.bookingDetails?.flights?.length) {
+       const nodes: any[] = [];
+       const flights = req.bookingDetails.flights;
+       nodes.push({
+           city: cleanCityName(flights[0].from),
+           date: formatDate(flights[0].departureTime),
+           time: formatTime(flights[0].departureTime),
+           status: 'Start'
+       });
+       flights.forEach((f: any, idx: number) => {
+           nodes.push({
+               city: cleanCityName(f.to),
+               date: formatDate(f.arrivalTime || f.departureTime), 
+               time: formatTime(f.arrivalTime),
+               status: idx === flights.length - 1 ? 'End' : 'Stop'
+           });
+       });
+       return nodes;
+    }
+
+    // 2. Parse Multi-City
+    const multiCityMatches = [...(req.agentNotes?.matchAll(/(\d+\.)?\s*([a-zA-Z\s]+)(?:,[^->]+)?\s*->\s*([a-zA-Z\s]+)(?:,[^|]+)?/g) || [])];
     if (multiCityMatches.length > 0) {
-        const cities = [multiCityMatches[0][1].split(',')[0].trim()]; 
-        multiCityMatches.forEach(m => cities.push(m[2].split(',')[0].trim())); 
-        return cities;
+        const nodes: any[] = [];
+        nodes.push({
+            city: cleanCityName(multiCityMatches[0][2]), 
+            date: formatDate(req.startDate), 
+            time: req.startTime || 'TBA', 
+            status: 'Start'
+        });
+        multiCityMatches.forEach((match, i) => {
+            nodes.push({
+                city: cleanCityName(match[3]), 
+                date: '... ', 
+                time: 'TBA',
+                status: i === multiCityMatches.length - 1 ? 'End' : 'Stop'
+            });
+        });
+        return nodes;
     }
-    const origin = req.agentNotes?.match(/Origin:\s*(.*?)(\n|$)/)?.[1]?.split(',')[0].trim();
-    const dests = req.destination.split(',').map(s => s.split(',')[0].trim());
-    if (origin && origin !== "Origin") return [origin, ...dests];
-    return ["Origin", ...dests];
+
+    // 3. Fallback: One-Way or Return
+    const originMatch = req.agentNotes?.match(/(?:Origin|From):\s*(.*?)(\n|$)/i);
+    let startCity = originMatch ? cleanCityName(originMatch[1]) : '';
+    const dest = cleanCityName(req.destination);
+    const isReturn = req.agentNotes?.toLowerCase().includes('return') || req.agentNotes?.toLowerCase().includes('round trip') || req.startDate !== req.endDate;
+
+    const simpleNodes = [];
+    simpleNodes.push({ city: startCity || "Start", date: formatDate(req.startDate), time: req.startTime || 'TBA', status: 'Start' });
+    simpleNodes.push({ city: dest, date: formatDate(req.endDate), time: isReturn ? 'Stay' : 'End', status: isReturn ? 'Stop' : 'End' });
+
+    if (isReturn) {
+        simpleNodes.push({ city: startCity || "Start", date: formatDate(req.endDate), time: req.endTime || 'TBA', status: 'Return' });
+    }
+
+    return simpleNodes;
   };
 
   // --- ACTIONS ---
@@ -169,27 +287,33 @@ const MyRequests: React.FC<MyRequestsProps> = ({
                   className={`cursor-pointer transition-colors group ${req.status === "Action Required" ? "bg-orange-50/40" : "hover:bg-gray-50"}`}
                 >
                   <td className="px-6 py-4">
-                     <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold shrink-0 border border-blue-100 group-hover:scale-105 transition-transform">
-                            <Plane size={18} />
-                        </div>
-                        <div>
-                            <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                                {req.destination.split(',')[0]} 
-                                {req.destination.includes(',') && <span className="text-[10px] bg-gray-100 px-1.5 rounded text-gray-500">+More</span>}
-                            </div>
-                            <div className="text-xs text-gray-400 mt-0.5 font-mono">#{req.id}</div>
-                        </div>
-                     </div>
+                      <div className="flex items-center gap-4">
+                         <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 border group-hover:scale-105 transition-transform
+                            ${req.tripType === 'Round Trip' ? 'bg-purple-50 text-purple-600 border-purple-100' : 
+                              req.tripType === 'Multi City' ? 'bg-orange-50 text-orange-600 border-orange-100' : 
+                              'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                             {req.tripType === 'Round Trip' ? <Repeat size={18} /> : 
+                              req.tripType === 'Multi City' ? <ArrowLeftRight size={18} /> : 
+                              <MoveRight size={18} />}
+                         </div>
+                         <div>
+                             <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                                 {formatCitiesDisplay(req.destination)}
+                             </div>
+                             <div className="flex items-center gap-2 mt-0.5">
+                                 <span className="text-xs font-mono text-gray-400">#{req.id}</span>
+                             </div>
+                         </div>
+                      </div>
                   </td>
 
                   <td className="px-6 py-4">
-                     <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <Calendar size={12} className="text-gray-400"/>
-                            {formatDate(req.startDate)} <ArrowRight size={10} className="text-gray-300"/> {formatDate(req.endDate)}
-                        </div>
-                     </div>
+                      <div className="flex flex-col gap-1">
+                         <div className="flex items-center gap-2 text-xs text-gray-600">
+                             <Calendar size={12} className="text-gray-400"/>
+                             {formatDate(req.startDate)} <ArrowRight size={10} className="text-gray-300"/> {formatDate(req.endDate)}
+                         </div>
+                      </div>
                   </td>
 
                   <td className="px-6 py-4">
@@ -256,228 +380,171 @@ const MyRequests: React.FC<MyRequestsProps> = ({
         </div>
       )}
 
-      {/* --- FULL PAGE DETAIL VIEW (Replaces Modal Overlay) --- */}
+      {/* --- FULL PAGE DETAIL VIEW (MATCHING MANAGER DASHBOARD EXACTLY) --- */}
       {viewingRequest && (
         <div className="fixed inset-x-0 bottom-0 top-12 z-[9999] bg-gray-50 flex flex-col w-full h-full overflow-hidden animate-fade-in-up">
             
-            {/* 1. Header - Full Width */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center shrink-0 shadow-sm">
-                <div className="flex items-center gap-4">
-                    <button 
-                        onClick={() => setViewingRequest(null)} 
-                        className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600 hover:text-gray-900 border border-gray-200"
-                    >
-                        <ArrowLeft size={20}/>
-                    </button>
+            {/* 1. DARK HEADER (MATCHING MANAGER CONSOLE EXACTLY) */}
+            <div className="bg-[#1e293b] px-8 py-6 relative flex justify-between items-start shrink-0">
+                <div className="flex items-center gap-5">
+                    <img 
+                        src={viewingRequest.employeeAvatar || `https://ui-avatars.com/api/?name=${viewingRequest.employeeName}&background=random`} 
+                        className="w-16 h-16 rounded-full border-4 border-white/10 shadow-sm" 
+                        alt=""
+                    />
                     <div>
-                        <div className="flex items-center gap-3">
-                            <h2 className="text-xl font-bold text-gray-900">
-                                Trip to {viewingRequest.destination.split(',')[0]}
-                            </h2>
-                            <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                                viewingRequest.status === 'Booked' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                            }`}>
-                                {viewingRequest.status}
-                            </span>
+                        <div className="flex items-center gap-3 mb-1">
+                            <h3 className="font-bold text-2xl text-white">{viewingRequest.employeeName}</h3>
+                            <span className="bg-white/10 text-white px-2 py-0.5 rounded text-xs font-medium border border-white/20">{viewingRequest.department}</span>
                         </div>
-                        <p className="text-xs text-gray-500 font-mono mt-0.5">Request ID: {viewingRequest.id}</p>
+                        <div className="flex items-center gap-4 text-sm text-gray-300">
+                            <span className="flex items-center gap-1"><MapPin size={12}/> {cleanCityName(viewingRequest.destination)}</span>
+                            <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
+                            <span className="flex items-center gap-1">ID: {viewingRequest.id}</span>
+                        </div>
                     </div>
                 </div>
-                
-                <button 
-                    onClick={() => setViewingRequest(null)} 
-                    className="text-sm font-bold text-gray-500 hover:text-gray-900 px-4 py-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                    Close View
-                </button>
+
+                {/* TRIP TYPE BADGE */}
+                <div className="flex items-center gap-3">
+                    <span className={`px-4 py-2 rounded-full text-xs font-bold border flex items-center gap-2 shadow-sm uppercase tracking-wide ${
+                        (viewingRequest.agentNotes?.toLowerCase().includes('multi city')) 
+                        ? 'bg-purple-500/20 text-purple-100 border-purple-500/30' 
+                        : (viewingRequest.startDate !== viewingRequest.endDate || viewingRequest.agentNotes?.toLowerCase().includes('return'))
+                        ? 'bg-indigo-500/20 text-indigo-100 border-indigo-500/30'
+                        : 'bg-blue-500/20 text-blue-100 border-blue-500/30'
+                    }`}>
+                         {(() => {
+                             const notes = viewingRequest.agentNotes?.toLowerCase() || '';
+                             if (notes.includes('multi city') || (viewingRequest.agentNotes?.includes('->') && !notes.includes('origin'))) {
+                                 return <><ArrowLeftRight size={14}/> Multi-City</>;
+                             } 
+                             if (notes.includes('return') || notes.includes('round trip') || viewingRequest.startDate !== viewingRequest.endDate) {
+                                 return <><Repeat size={14}/> Round Trip</>;
+                             }
+                             return <><MoveRight size={14}/> One-Way</>;
+                         })()}
+                    </span>
+                    <button onClick={() => setViewingRequest(null)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full text-white transition-colors"><X size={20}/></button>
+                </div>
             </div>
 
             {/* 2. Scrollable Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8">
+            <div className="flex-1 overflow-y-auto p-8 bg-gray-50">
                 <div className="max-w-5xl mx-auto space-y-8 pb-20">
                     
-                    {/* --- ITINERARY TIMELINE --- */}
-                    <div>
-                        <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                            <MapPin size={20} className="text-primary-600"/> Itinerary Timeline
-                        </h3>
-
-                        {viewingRequest.bookingDetails?.flights && viewingRequest.bookingDetails.flights.length > 0 ? (
-                            /* BOOKED STATE */
-                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                                {viewingRequest.bookingDetails.flights.map((seg, idx) => (
-                                    <div key={idx} className="flex flex-col md:flex-row md:items-center p-6 border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors gap-4 md:gap-0">
-                                        <div className="w-32 shrink-0 md:border-r border-gray-100 pr-6 mr-6 flex flex-row md:flex-col items-center md:items-end md:justify-center text-right gap-2 md:gap-0">
-                                            <span className="text-lg font-bold text-gray-900">{formatTime(seg.departureTime) || '--:--'}</span>
-                                            <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">
-                                                {seg.departureTime ? formatDate(seg.departureTime) : 'Date Pending'}
-                                            </span>
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex flex-wrap items-center gap-3 mb-2">
-                                                <span className="text-lg font-bold text-gray-900">{seg.from}</span>
-                                                <ArrowRight size={18} className="text-gray-300"/>
-                                                <span className="text-lg font-bold text-gray-900">{seg.to}</span>
+                    {/* --- ITINERARY TIMELINE (EXACT MATCH WITH MANAGER DASHBOARD) --- */}
+                    <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-center">
+                        <div className="flex items-center gap-4 overflow-x-auto pb-4 w-full justify-between max-w-3xl">
+                            {getFullTimeline(viewingRequest).map((node, i, arr) => {
+                                const isReturnToStart = i === arr.length - 1 && node.city === arr[0].city;
+                                return (
+                                    <React.Fragment key={i}>
+                                        <div className="flex flex-col items-center min-w-[120px] shrink-0 z-10 relative group">
+                                            <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 shadow-md border-4 border-white transition-transform group-hover:scale-110 ${i === 0 ? 'bg-green-100 text-green-600' : isReturnToStart ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-50 text-blue-500'}`}>
+                                                {isReturnToStart ? <Home size={20} className="fill-current"/> : <MapPin size={20} className="fill-current"/>}
                                             </div>
-                                            <div className="flex items-center gap-3 text-sm text-gray-500">
-                                                <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide">
-                                                    {seg.mode || 'Flight'}
-                                                </span>
-                                                <span className="font-medium">{seg.airline}</span>
-                                                <span>•</span>
-                                                <span className="font-mono">{seg.flightNumber}</span>
+                                            <span className="text-base font-bold text-gray-900 text-center leading-tight mb-1">{node.city}</span>
+                                            <div className="flex flex-col items-center gap-1 mt-1">
+                                                <span className="text-xs font-bold text-gray-600 bg-gray-100 px-2.5 py-0.5 rounded border border-gray-200">{node.date}</span>
+                                                {node.time && node.time !== 'TBA' && (<span className="text-[10px] font-mono text-gray-400 bg-white px-1.5 rounded border border-gray-100">{node.time}</span>)}
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            /* PENDING STATE */
-                            <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-                                <div className="flex items-center gap-2 overflow-x-auto pb-4 pt-2 w-full justify-between max-w-3xl mx-auto">
-                                    {getTimelineCities(viewingRequest).map((city, i, arr) => (
-                                        <React.Fragment key={i}>
-                                            <div className="flex flex-col items-center min-w-[100px] shrink-0 z-10">
-                                                <div className={`w-12 h-12 rounded-full flex items-center justify-center border-4 border-white shadow-lg mb-3 ${
-                                                    i === 0 ? 'bg-green-100 text-green-600' : 
-                                                    i === arr.length - 1 ? 'bg-red-100 text-red-600' : 
-                                                    'bg-blue-50 text-blue-500'
-                                                }`}>
-                                                    <MapPin size={20} className="fill-current"/>
-                                                </div>
-                                                <span className="text-sm font-bold text-gray-800 text-center leading-tight">{city}</span>
-                                                <span className="text-[10px] font-bold text-gray-400 uppercase mt-1 tracking-wider">
-                                                    {i === 0 ? 'Start' : i === arr.length - 1 ? 'End' : 'Stop'}
-                                                </span>
-                                            </div>
-                                            {i < arr.length - 1 && (
-                                                <div className="h-1 flex-1 bg-gray-100 shrink-0 mb-8 mx-2 relative min-w-[60px] rounded-full">
-                                                    <div className="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 bg-gray-200 p-1 rounded-full">
-                                                        <ArrowRight size={12} className="text-gray-400"/>
+                                        {i < arr.length - 1 && (
+                                            <div className="h-0.5 flex-1 bg-gray-200 shrink-0 mb-14 mx-2 relative min-w-[60px] rounded-full flex items-center justify-center">
+                                                {(i === arr.length - 2 && arr[i+1].city === arr[0].city) ? (
+                                                    <div className="absolute -top-4 flex flex-col items-center">
+                                                        <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-1"><Undo2 size={10}/> Return</span>
                                                     </div>
-                                                </div>
-                                            )}
-                                        </React.Fragment>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                                                ) : null}
+                                                <div className="absolute right-0 -top-1.5 w-3 h-3 border-t-2 border-r-2 border-gray-300 rotate-45"></div>
+                                            </div>
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </div>
                     </div>
 
-                    {/* --- DOCUMENTS & NOTES GRID --- */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        
-                        {/* LEFT COL: DOCUMENTS */}
-                        <div className="lg:col-span-2 space-y-8">
-                            
-                            {/* Documents Card */}
-                            {(viewingRequest.bookingDetails?.flights?.some(f => f.ticketFile) || viewingRequest.bookingDetails?.hotels?.some(h => h.bookingFile)) && (
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                        <Paperclip size={20} className="text-primary-600"/> Travel Documents
-                                    </h3>
-                                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        {viewingRequest.bookingDetails?.flights?.map((f, i) => f.ticketFile && (
-                                            <button key={`flight-${i}`} onClick={() => handleDownload(f.ticketFile || "")} className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50/50 transition-all group text-left">
-                                                <div className="bg-blue-100 text-blue-600 p-3 rounded-lg group-hover:scale-110 transition-transform"><Plane size={20}/></div>
-                                                <div className="flex-1">
-                                                    <p className="text-sm font-bold text-gray-900">Flight Ticket</p>
-                                                    <p className="text-xs text-gray-500 truncate">{f.from} to {f.to}</p>
-                                                </div>
-                                                <Download size={18} className="text-gray-300 group-hover:text-blue-600"/>
-                                            </button>
-                                        ))}
-                                        {viewingRequest.bookingDetails?.hotels?.map((h, i) => h.bookingFile && (
-                                            <button key={`hotel-${i}`} onClick={() => handleDownload(h.bookingFile || "")} className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-orange-500 hover:bg-orange-50/50 transition-all group text-left">
-                                                <div className="bg-orange-100 text-orange-600 p-3 rounded-lg group-hover:scale-110 transition-transform"><FileText size={20}/></div>
-                                                <div className="flex-1">
-                                                    <p className="text-sm font-bold text-gray-900">Hotel Voucher</p>
-                                                    <p className="text-xs text-gray-500 truncate">{h.hotelName || h.city}</p>
-                                                </div>
-                                                <Download size={18} className="text-gray-300 group-hover:text-orange-600"/>
-                                            </button>
-                                        ))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-6">
+                            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Calendar size={12}/> Booking Schedule</label>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <div>
+                                            <p className="text-xs text-gray-500">Departure</p>
+                                            <p className="font-bold text-gray-900 text-base">{formatDate(viewingRequest.startDate)}</p>
+                                        </div>
+                                        <ArrowRight className="text-gray-300" size={16}/>
+                                        <div className="text-right">
+                                            <p className="text-xs text-gray-500">Return</p>
+                                            <p className="font-bold text-gray-900 text-base">{formatDate(viewingRequest.endDate)}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Briefcase size={12}/> Business Purpose</label>
+                                <p className="text-sm text-gray-700 leading-relaxed italic">"{viewingRequest.purpose || "No specific purpose stated."}"</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200/60">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><FileText size={12}/> Trip Configuration</label>
+                                <p className="text-xs text-gray-600 font-medium whitespace-pre-wrap">{viewingRequest.agentNotes || "No notes."}</p>
+                            </div>
+                            {viewingRequest.amount !== undefined && viewingRequest.amount !== null && viewingRequest.amount > 0 && (
+                                <div className="bg-gray-900 text-white p-6 rounded-2xl shadow-xl">
+                                    <div className="flex items-center gap-2 mb-4 opacity-80">
+                                        <Briefcase size={16}/>
+                                        <span className="text-xs font-bold uppercase tracking-widest">Estimated Cost</span>
+                                    </div>
+                                    <div className="flex items-end justify-between">
+                                        <div>
+                                            <p className="text-3xl font-black">₹{viewingRequest.amount.toLocaleString()}</p>
+                                            <p className="text-xs text-gray-400 mt-1">Budget Impact</p>
+                                        </div>
+                                        <span className={`px-2 py-1 rounded text-xs font-bold ${viewingRequest.amount > 50000 ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-green-500/20 text-green-300 border border-green-500/30'}`}>
+                                            {viewingRequest.amount > 50000 ? 'High Value' : 'Standard'}
+                                        </span>
                                     </div>
                                 </div>
                             )}
-
-                            {/* Remarks / Configuration */}
-                            <div>
-                                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                    <Info size={20} className="text-primary-600"/> Trip Configuration
-                                </h3>
-                                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-                                    {viewingRequest.agentNotes ? (
-                                        <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">
-                                            {viewingRequest.agentNotes}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center py-8 text-gray-400 italic">
-                                            No specific configuration notes available.
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* RIGHT COL: METADATA */}
-                        <div className="space-y-6">
-                            
-                            {/* Employee Card */}
-                            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <User size={14}/> Traveler
-                                </h4>
-                                <div className="flex items-center gap-4">
-                                    <img 
-                                        src={viewingRequest.employeeAvatar} 
-                                        className="w-12 h-12 rounded-full border-2 border-gray-100" 
-                                        alt=""
-                                    />
-                                    <div>
-                                        <p className="text-base font-bold text-gray-900">{viewingRequest.employeeName}</p>
-                                        <p className="text-xs text-gray-500 font-medium bg-gray-100 px-2 py-0.5 rounded-full inline-block mt-1">
-                                            {viewingRequest.department}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Purpose Card */}
-                            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <Briefcase size={14}/> Purpose
-                                </h4>
-                                <p className="text-sm text-gray-700 leading-relaxed italic">
-                                    "{viewingRequest.purpose || "No specific purpose mentioned for this trip."}"
-                                </p>
-                            </div>
-
-                            {/* Schedule Summary */}
-                            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <Calendar size={14}/> Summary
-                                </h4>
-                                <div className="space-y-3">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-500">Depart</span>
-                                        <span className="font-bold text-gray-900">{formatDate(viewingRequest.startDate)}</span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-500">Return</span>
-                                        <span className="font-bold text-gray-900">{formatDate(viewingRequest.endDate)}</span>
-                                    </div>
-                                    <div className="h-px bg-gray-100 my-2"></div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-500">Type</span>
-                                        <span className="font-bold text-primary-600">{viewingRequest.type}</span>
-                                    </div>
-                                </div>
-                            </div>
-
                         </div>
                     </div>
 
+                    {/* --- DOCUMENTS --- */}
+                    {(viewingRequest.bookingDetails?.flights?.some(f => f.ticketFile) || viewingRequest.bookingDetails?.hotels?.some(h => h.bookingFile)) && (
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                <Paperclip size={20} className="text-primary-600"/> Travel Documents
+                            </h3>
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {viewingRequest.bookingDetails?.flights?.map((f, i) => f.ticketFile && (
+                                    <button key={`flight-${i}`} onClick={() => handleDownload(f.ticketFile || "")} className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50/50 transition-all group text-left">
+                                        <div className="bg-blue-100 text-blue-600 p-3 rounded-lg group-hover:scale-110 transition-transform"><Plane size={20}/></div>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-bold text-gray-900">Flight Ticket</p>
+                                            <p className="text-xs text-gray-500 truncate">{cleanCityName(f.from)} to {cleanCityName(f.to)}</p>
+                                        </div>
+                                        <Download size={18} className="text-gray-300 group-hover:text-blue-600"/>
+                                    </button>
+                                ))}
+                                {viewingRequest.bookingDetails?.hotels?.map((h, i) => h.bookingFile && (
+                                    <button key={`hotel-${i}`} onClick={() => handleDownload(h.bookingFile || "")} className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-orange-500 hover:bg-orange-50/50 transition-all group text-left">
+                                        <div className="bg-orange-100 text-orange-600 p-3 rounded-lg group-hover:scale-110 transition-transform"><FileText size={20}/></div>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-bold text-gray-900">Hotel Voucher</p>
+                                            <p className="text-xs text-gray-500 truncate">{h.hotelName || h.city}</p>
+                                        </div>
+                                        <Download size={18} className="text-gray-300 group-hover:text-orange-600"/>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

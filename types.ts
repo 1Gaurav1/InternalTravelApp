@@ -115,8 +115,9 @@ export interface TravelRequest {
   employeeName: string;
   employeeAvatar?: string;
   department: string;
-  branch?: string;      // <--- ADDED for Admin reporting
+  branch?: string;      
   type: 'Domestic' | 'International';
+  tripType: 'One Way' | 'Round Trip' | 'Multi City';
   submittedDate: string;
   
   // User Inputs
@@ -124,13 +125,13 @@ export interface TravelRequest {
   preferredFlight?: string; // "Special Instructions"
   
   // Workflow Data
-  managerName?: string;     // <--- ADDED to track who approved
-  rejectionReason?: string; // <--- ADDED for rejection modal
-  agentNotes?: string;      // Stores Origin, Chat history, etc.
+  managerName?: string;    
+  rejectionReason?: string;
+  agentNotes?: string;     
   
   // Agent Data
-  agentOptions?: string[]; // Legacy text options
-  flightOptions?: FlightOption[]; // Structured options (if used)
+  agentOptions?: string[]; 
+  flightOptions?: FlightOption[]; 
   selectedOptionId?: string;
   
   // Final Booking

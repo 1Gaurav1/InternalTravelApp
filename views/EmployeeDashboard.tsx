@@ -20,6 +20,29 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ onNavigate, reque
   const user = JSON.parse(localStorage.getItem("user") || '{}');
   const userName = user.name ? user.name.split(' ')[0] : 'Employee';
 
+  // --- HELPER: Format Cities properly (e.g. "Mumbai, Delhi") ---
+  const formatCities = (cityData: any) => {
+    try {
+      // 1. If it's already an array: ["A", "B"] -> "A, B"
+      if (Array.isArray(cityData)) {
+        return cityData.join(', ');
+      }
+      // 2. If it's a string that looks like an array: '["A", "B"]' -> "A, B"
+      if (typeof cityData === 'string') {
+        const trimmed = cityData.trim();
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+           const parsed = JSON.parse(trimmed);
+           return Array.isArray(parsed) ? parsed.join(', ') : trimmed;
+        }
+        return cityData; // It's just a normal string like "London"
+      }
+    } catch (e) {
+      console.error("Error formatting cities:", e);
+      return String(cityData);
+    }
+    return 'N/A';
+  };
+
   const statCards = [
     { 
       label: 'Total Requests', 
@@ -125,7 +148,8 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ onNavigate, reque
                   <td className="px-6 py-4 text-gray-600 flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-gray-300"></div>
                     <div>
-                        <p className="font-bold text-gray-900 text-sm">{req.destination}</p>
+                        {/* --- CHANGED: Using formatCities() helper here --- */}
+                        <p className="font-bold text-gray-900 text-sm">{formatCities(req.destination)}</p>
                         <p className="text-xs">{new Date(req.startDate).toLocaleDateString()}</p>
                     </div>
                   </td>

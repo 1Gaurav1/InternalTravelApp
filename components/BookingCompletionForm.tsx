@@ -18,6 +18,14 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
   const [other, setOther] = useState<{ [index: number]: { cost: number, agentFee: number, description: string } }>({});
   const [showErrors, setShowErrors] = useState(false);
 
+// --- 0. SCROLL TO TOP ON LOAD ---
+  useEffect(() => {
+    // Scrolls the main window
+    window.scrollTo(0, 0);
+    // If you are using a scrollable container inside a layout, this catches it:
+    document.getElementById('booking-form-top')?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
   // --- 1. SMART ROUTE PARSING ---
   useEffect(() => {
       const cleanCity = (str: string) => {
@@ -26,6 +34,7 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
           cleaned = cleaned.replace(/^\d+\.\s*/, '').replace(/^(Origin:|From:|To:)/i, '').trim();
           return cleaned;
       };
+      
 
       const noteLower = request.agentNotes?.toLowerCase() || '';
       
@@ -231,7 +240,7 @@ const BookingCompletionForm: React.FC<Props> = ({ request, onConfirm, onCancel }
   const getErrorClass = (val: any) => showErrors && !val ? "border-red-500 ring-1 ring-red-500 bg-red-50" : "border-slate-200 focus:border-pink-500 focus:ring-pink-500";
 
   return (
-    <div className="space-y-8 pb-10">
+    <div id="booking-form-top" className="space-y-20 pb-10 animate-fade-in">
       
       {/* HEADER */}
       <div className="bg-slate-900 p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center shadow-xl text-white gap-4">
